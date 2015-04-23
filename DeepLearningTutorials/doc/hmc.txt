@@ -1,0 +1,371 @@
+.. _HMC:
+
+Hybrid Monte-Carlo Sampling
+===========================
+
+
+.. note::
+  This is an advanced tutorial, which shows how one can implemented Hybrid
+  Monte-Carlo (HMC) sampling using Theano. We assume the reader is already
+  familiar with Theano and energy-based models such as the RBM.
+
+.. note::
+    The code for this section is available for download `here <http://deeplearning.net/tutorial/code/hmc/hmc.py>`_.
+
+
+Theory
+++++++
+
+Maximum likelihood learning of energy-based models requires a robust algorithm
+to sample negative phase particles (see Eq.(4) of the :doc:`rbm` tutorial).
+When training RBMs with CD or PCD, this is typically done with block Gibbs
+sampling, where the conditional distributions :math:`p(h|v)` and
+:math:`p(v|h)` are used as the transition operators of the Markov chain.
+
+In certain cases however, these conditional distributions might be difficult
+to sample from (i.e. requiring expensive matrix inversions, as in the case of
+the "mean-covariance RBM"). Also, even if Gibbs sampling can be done
+efficiently, it nevertheless operates via a random walk which might not be
+statistically efficient for some distributions. 
+In this context, and when sampling from continuous variables, Hybrid Monte
+Carlo (HMC) can prove to be a powerful tool [Duane87]_. It avoids random walk
+behavior by simulating a physical system governed by Hamiltonian dynamics,
+potentially avoiding tricky conditional distributions in the process. 
+
+In HMC, model samples are obtained by simulating a physical system, where
+particles move about a high-dimensional landscape, subject to potential and
+kinetic energies.  Adapting the notation from [Neal93]_, particles are
+characterized by a position vector or state :math:`s \in \mathcal{R}^D` and
+velocity vector :math:`\phi \in \mathcal{R}^D`. The combined state of a
+particle is denoted as :math:`\chi=(s,\phi)`. The Hamiltonian is then defined
+as the sum of potential energy :math:`E(s)` (same energy function defined by
+energy-based models) and kinetic energy :math:`K(\phi)`, as follows:
+
+.. math::
+    
+    \mathcal{H}(s,\phi) = E(s) + K(\phi) 
+                              = E(s) + \frac{1}{2} \sum_i \phi_i^2
+
+Instead of sampling :math:`p(s)` directly, HMC operates by sampling from the
+canonical distribution 
+:math:`p(s,\phi) = \frac{1}{Z} \exp(-\mathcal{H}(s,\phi))=p(s)p(\phi)`. 
+Because the two variables are independent, marginalizing over
+:math:`\phi` is trivial and recovers the original distribution of
+interest.
+
+**Hamiltonian Dynamics**
+
+State :math:`s` and velocity :math:`\phi` are modified such that
+:math:`\mathcal{H}(s,\phi)` remains constant throughout the simulation.
+The differential equations are given by:
+
+.. math::
+    :label: ds_dt
+
+    \frac{ds_i}{dt} &= \frac{\partial \mathcal{H}}{\partial \phi_i} = \phi_i \\
+    \frac{d\phi_i}{dt} &= - \frac{\partial \mathcal{H}}{\partial s_i} 
+                     = - \frac{\partial E}{\partial s_i}
+
+As shown in [Neal93]_, the above transformation preserves volume and is
+reversible. The above dynamics can thus be used as transition operators of a
+Markov chain and will leave :math:`p(s,\phi)` invariant. That chain by itself
+is not ergodic however, since simulating the dynamics maintains a fixed
+Hamiltonian :math:`\mathcal{H}(s,\phi)`.
+HMC thus alternates hamiltonian dynamic steps, with Gibbs sampling of the
+velocity. Because :math:`p(s)` and :math:`p(\phi)` are independent, sampling
+:math:`\phi_{new} \sim p(\phi|s)` is trivial since :math:`p(\phi|s)=p(\phi)`,
+where :math:`p(\phi)` is often taken to be the uni-variate Gaussian.
+
+
+**The Leap-Frog Algorithm**
+
+In practice, we cannot simulate Hamiltonian dynamics exactly because of the
+problem of time discretization. There are several ways one can do this. To
+maintain invariance of the Markov chain however, care must be taken to
+preserve the properties of volume conservation and time reversibility.  The
+**leap-frog algorithm** maintains these properties and operates in 3 steps:
+
+.. math::
+  :label: leap-frog
+
+  \phi_i(t + \epsilon/2) &= \phi_i(t) - \frac{\epsilon}{2} \frac{\partial{}}{\partial s_i} E(s(t)) \\
+  s_i(t + \epsilon) &= s_i(t) + \epsilon \phi_i(t + \epsilon/2) \\
+  \phi_i(t + \epsilon) &= \phi_i(t + \epsilon/2) - \frac{\epsilon}{2} \frac{\partial{}}{\partial s_i} E(s(t + \epsilon)) \\
+
+We thus perform a half-step update of the velocity at time
+:math:`t+\epsilon/2`, which is then used to compute :math:`s(t + \epsilon)`
+and :math:`\phi(t + \epsilon)`.
+
+**Accept / Reject**
+
+In practice, using finite stepsizes :math:`\epsilon` will not preserve
+:math:`\mathcal{H}(s,\phi)` exactly and will introduce bias in the simulation.
+Also, rounding errors due to the use of floating point numbers means that the
+above transformation will not be perfectly reversible.
+
+HMC cancels these effects **exactly** by adding a Metropolis accept/reject
+stage, after :math:`n` leapfrog steps. The new state :math:`\chi' = (s',\phi')` is
+accepted with probability :math:`p_{acc}(\chi,\chi')`, defined as:
+
+.. math::
+
+    p_{acc}(\chi,\chi') = min \left( 1, \frac{\exp(-\mathcal{H}(s',\phi')}{\exp(-\mathcal{H}(s,\phi)} \right)
+
+
+**HMC Algorithm**
+
+In this tutorial, we obtain a new HMC sample as follows:
+
+1. sample a new velocity from a univariate Gaussian distribution
+2. perform :math:`n` leapfrog steps to obtain the new state :math:`\chi'`
+3. perform accept/reject move of :math:`\chi'`
+
+
+Implementing HMC Using Theano
++++++++++++++++++++++++++++++
+
+In Theano, update dictionaries and shared variables provide a natural way to
+implement a sampling algorithm. The current state of the sampler can be
+represented as a Theano shared variable, with HMC updates being implemented by
+the updates list of a Theano function.
+
+We breakdown the HMC algorithm into the following sub-components:
+
+* `simulate\_dynamics`: a symbolic Python function which, given an initial position and velocity, will perform `n\_steps` leapfrog updates and return the symbolic variables for the proposed state :math:`\chi'`.
+* `hmc\_move`: a symbolic Python function which given a starting position,
+  generates :math:`\chi` by randomly sampling a velocity vector. It then
+  calls `simulate\_dynamics` and determines whether the transition :math:`\chi
+  \rightarrow \chi'` is to be accepted.
+* `hmc\_updates`: a Python function which, given the symbolic outputs of `hmc\_move`, 
+  generates the list of updates for a single iteration of HMC.
+* `HMC\_sampler`: a Python helper class which wraps everything together.
+
+  
+**simulate_dynamics**
+
+To perform :math:`n` leapfrog steps, we first need to define a function over
+which `Scan` can iterate over. Instead of implementing Eq. :eq:`leap-frog`
+verbatim, notice that we can obtain :math:`s(t + n \epsilon)` and
+:math:`\phi(t + n \epsilon)` by performing an initial half-step update for
+:math:`\phi`, followed by :math:`n` full-step updates for :math:`s,\phi` and
+one last half-step update for :math:`\phi`. In loop form, this gives:
+
+.. math::
+  :label: leap-frog2
+
+  & \phi_i(t + \epsilon/2) = \phi_i(t) - 
+     \frac{\epsilon}{2} \frac{\partial{}}{\partial s_i} E(s(t)) \\
+  & s_i(t + \epsilon) = s_i(t) + \epsilon \phi_i(t + \epsilon/2) \\
+  & \text{For } m \in [2,n]\text{, perform full updates: } \\
+  & \qquad
+    \phi_i(t + (m - 1/2)\epsilon) = \phi_i(t + (m-3/2)\epsilon) - 
+        \epsilon \frac{\partial{}}{\partial s_i} E(s(t + (m-1)\epsilon)) \\
+  & \qquad
+    s_i(t + m\epsilon) = s_i(t) + \epsilon \phi_i(t + (m-1/2)\epsilon) \\
+  & \phi_i(t + n\epsilon) = \phi_i(t + (n-1/2)\epsilon) - 
+       \frac{\epsilon}{2} \frac{\partial{}}{\partial s_i} E(s(t + n\epsilon)) \\
+
+
+The inner-loop defined above is implemented by the following `leapfrog`
+function, with `pos`, `vel` and `step` replacing :math:`s,\phi` and :math:`\epsilon`
+respectively.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: simulate_dynamics.leapfrog
+
+The `simulate_dynamics` function performs the full algorithm of Eqs.
+:eq:`leap-frog2`. We start with the initial half-step update of :math:`\phi`
+and full-step of :math:`s`, and then scan over the `leapfrog` method
+`n\_steps-1` times.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: simulate_dynamics
+
+A final half-step is performed to compute :math:`\phi(t+n\epsilon)`, and the
+final proposed state :math:`\chi'` is returned.
+
+
+**hmc_move**
+
+The `hmc\_move` function implements the remaining steps (steps 1 and 3) of an
+HMC move proposal (while wrapping the `simulate\_dynamics` function). Given a
+matrix of initial states :math:`s \in \mathcal{R}^{N \times D}` (`positions`) and
+energy function :math:`E(s)` (`energy\_fn`), it defines the symbolic graph for
+computing `n\_steps` of HMC, using a given `stepsize`. The function prototype
+is as follows:
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-1
+  :end-before: end-snippet-1
+
+We start by sampling random velocities, using the provided shared RandomStream
+object. Velocities are sampled independently for each dimension and for each
+particle under simulation, yielding a :math:`N \times D` matrix.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-2
+  :end-before: end-snippet-2
+
+Since we now have an initial position and velocity, we can now call the
+`simulate\_dynamics` to obtain the proposal for the new state :math:`\chi'`.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-3
+  :end-before: end-snippet-3
+
+We then accept/reject the proposed state based on the Metropolis algorithm.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-4
+  :end-before: end-snippet-4
+
+where `metropolis\_hastings\_accept` and `hamiltonian` are helper functions,
+defined as follows.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: metropolis_hastings_accept
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: hamiltonian
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: kinetic_energy
+
+`hmc\_move` finally returns the tuple `(accept, final\_pos)`. `accept` is a
+symbolic boolean variable indicating whether or not the new state `final_pos`
+should be used or not.
+
+
+**hmc_updates**
+
+.. _switch: http://deeplearning.net/software/theano/library/tensor/basic.html#tensor.switch
+.. _clip: http://deeplearning.net/software/theano/library/tensor/basic.html#tensor.clip
+
+.. _dimshuffle: http://deeplearning.net/software/theano/library/tensor/basic.html#tensor._tensor_py_operators.dimshuffle
+
+The purpose of `hmc\_updates` is to generate the list of updates to
+perform, whenever our HMC sampling function is called. `hmc\_updates` thus
+receives as parameters, a series of shared variables to update (`positions`, `stepsize` and
+`avg\_acceptance\_rate`), and the parameters required to compute their new
+state.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-5
+  :end-before: end-snippet-5
+
+Using the above code, the dictionary `{positions: new\_positions}` can be used
+to update the state of the sampler with either (1) the new state `final\_pos`
+if `accept` is True, or (2) the old state if `accept` is False.  This
+conditional assignment is performed by the `switch`_ op.  
+
+`switch` expects as its first argument, a boolean mask with the same
+broadcastable dimensions as the second and third argument. Since `accept` is
+scalar-valued, we must first use `dimshuffle`_ to transform it to a tensor with
+`final\_pos.ndim` broadcastable dimensions (`accept\_matrix`).
+
+`hmc\_updates` additionally implements an adaptive version of HMC, as
+implemented in the accompanying code to [Ranzato10]_. We start by tracking the
+average acceptance rate of the HMC move proposals (across many simulations),
+using an exponential moving average with time constant
+`1-avg\_acceptance\_slowness`.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-6
+  :end-before: end-snippet-6
+
+If the average acceptance rate is larger than the `target\_acceptance\_rate`, we
+increase the `stepsize` by a factor of `stepsize\_inc` in order to increase the
+mixing rate of our chain. If the average acceptance rate is too low however,
+`stepsize` is decreased by a factor of `stepsize\_dec`, yielding a more
+conservative mixing rate. The `clip`_ op allows us to maintain the `stepsize`
+in the range [`stepsize\_min`, `stepsize\_max`].
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-7
+  :end-before: end-snippet-7
+
+The final updates list is then returned.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :start-after: start-snippet-8
+  :end-before: end-snippet-8
+
+**HMC_sampler**
+
+We finally tie everything together using the `HMC\_Sampler` class. Its main
+elements are:
+
+* `new\_from\_shared\_positions`: a constructor method which allocates various
+  shared variables and strings together the calls to `hmc\_move` and
+  `hmc\_updates`. It also builds the theano function `simulate`, whose sole
+  purpose is to execute the updates generated by `hmc\_updates`.
+* `draw`: a convenience method which calls the Theano function `simulate`
+  and returns a copy of the contents of the shared variable `self.positions`.
+
+.. literalinclude:: ../code/hmc/hmc.py
+  :pyobject: HMC_sampler
+
+Testing our Sampler
++++++++++++++++++++
+
+We test our implementation of HMC by sampling from a multi-variate Gaussian
+distribution. We start by generating a random mean vector `mu` and covariance
+matrix `cov`, which allows us to define the energy function of the
+corresponding Gaussian distribution: `gaussian\_energy`.
+We then initialize the state of the sampler by allocating a `position` shared
+variable. It is passed to the constructor of `HMC\_sampler` along with our
+target energy function.
+
+Following a burn-in period, we then generate a large number of samples and
+compare the empirical mean and covariance matrix to their true values.
+
+.. literalinclude:: ../code/hmc/test_hmc.py
+  :pyobject: sampler_on_nd_gaussian
+
+.. literalinclude:: ../code/hmc/test_hmc.py
+  :pyobject: test_hmc
+
+The above code can be run using the command: "nosetests -s code/hmc/test\_hmc.py". The output is as follows:
+
+.. code-block:: bash
+
+    [desjagui@atchoum hmc]$ python test_hmc.py
+
+    ****** TARGET VALUES ******
+    target mean: [ 6.96469186  2.86139335  2.26851454  5.51314769  7.1946897 ]
+    target cov:
+    [[ 1.          0.66197111  0.71141257  0.55766643  0.35753822]
+     [ 0.66197111  1.          0.31053199  0.45455485  0.37991646]
+     [ 0.71141257  0.31053199  1.          0.62800335  0.38004541]
+     [ 0.55766643  0.45455485  0.62800335  1.          0.50807871]
+     [ 0.35753822  0.37991646  0.38004541  0.50807871  1.        ]]
+
+    ****** EMPIRICAL MEAN/COV USING HMC ******
+    empirical mean:  [ 6.94155164  2.81526039  2.26301715  5.46536853  7.19414496]
+    empirical_cov:
+    [[ 1.05152997  0.68393537  0.76038645  0.59930252  0.37478746]
+     [ 0.68393537  0.97708159  0.37351422  0.48362404  0.3839558 ]
+     [ 0.76038645  0.37351422  1.03797111  0.67342957  0.41529132]
+     [ 0.59930252  0.48362404  0.67342957  1.02865056  0.53613649]
+     [ 0.37478746  0.3839558   0.41529132  0.53613649  0.98721449]]
+
+    ****** HMC INTERNALS ******
+    final stepsize 0.460446628091
+    final acceptance_rate 0.922502043428
+
+As can be seen above, the samples generated by our HMC sampler yield an
+empirical mean and covariance matrix, which are very close to the true
+underlying parameters. The adaptive algorithm also seemed to work well as the
+final acceptance rate is close to our target of `0.9`.
+
+References
+++++++++++
+
+.. [Alder59] Alder, B. J. and Wainwright, T. E. (1959) "Studies in molecular dynamics. 1. General method", Journal of Chemical Physics, vol. 31, pp. 459-466.
+
+.. [Andersen80] Andersen, H.C. (1980) "Molecular dynamics simulations at constant pressure and/or temperature", Journal of Chemical Physics, vol. 72, pp. 2384-2393.
+
+.. [Duane87] Duane, S., Kennedy, A. D., Pendleton, B. J., and Roweth, D. (1987) "Hybrid Monte Carlo", Physics Letters, vol. 195, pp. 216-222.
+
+.. [Neal93] Neal, R. M. (1993) "Probabilistic Inference Using Markov Chain Monte Carlo Methods", Technical Report CRG-TR-93-1, Dept. of Computer Science, University of Toronto, 144 pages
+

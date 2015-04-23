@@ -1,0 +1,87 @@
+# After changing this file, check it on:
+# http://lint.travis-ci.org/
+
+#We can't get scipy installed with the python language
+#So we will use the system python from the c language.
+language: c
+#language: python
+#python:
+#  - "2.5"
+#  - "2.7"
+#  - "3.2"
+# command to install dependencies
+before_install:
+#zlib1g-dev is needed to allow PIL to uncompress the dataset.
+  - sudo apt-get update
+  - sudo apt-get install -qq libatlas3gf-base libatlas-dev zlib1g-dev zip unzip zlibc libzip-dev libjpeg8 libjpeg62-dev libfreetype6 libfreetype6-dev python-numpy python-scipy python-pip python-nose python-yaml pyflakes python-imaging
+
+install:
+#  - "pip install -q numpy --use-mirrors"
+# Use Pillow instead of PIL as it is better packaged
+#  - "pip install -q Pillow --use-mirrors"
+#If we don't install numpy before SciPy 0.10.1, the SciPy installations fails.
+#  - "pip install -q scipy --use-mirrors"
+  - "sudo pip install --no-deps git+git://github.com/Theano/Theano.git"
+
+env:
+  - PART="test.py:test_logistic_sgd test.py:test_logistic_cg test.py:test_mlp test.py:test_convolutional_mlp test.py:test_dA"
+  - PART="test.py:test_SdA"
+  - PART="test.py:test_dbn"
+  - PART="test.py:test_rbm test.py:test_rnnrbm"
+  - PART="-e test.py"
+
+#i7-2600K CPU @ 3.40GHz
+#166.572s   #8      test.test_rbm OK
+#155.114s   #7      test.test_dbn OK
+#152.365s   #9      test.test_rnnrbm OK
+#127.286s   #6      test.test_SdA OK
+#39.252s    #5      test.test_dA OK
+#27.56s     #4      test.test_convolutional_mlp OK
+#15.454s    #3      test.test_mlp OK
+#12.732s    #1      test.test_logistic_sgd OK
+#12.638s    #2      test.test_logistic_cg OK
+
+#i7-920
+#296.475s   #7      code.test.test_dbn OK
+#257.272s   #6      code.test.test_SdA OK
+#234.776s   #9      code.test.test_rnnrbm OK
+#233.896s   #8      code.test.test_rbm OK
+#65.737s    #5      code.test.test_dA OK
+#37.658s    #4      code.test.test_convolutional_mlp OK
+#24.172s    #3      code.test.test_mlp OK
+#20.401s    #1      code.test.test_logistic_sgd OK
+#17.546s    #2      code.test.test_logistic_cg OK
+
+# On Core2 duo E8500 with MRG
+#308.004s   #7      code.test.test_dbn OK
+#277.268s   #6      code.test.test_SdA OK
+#126.102s   #8      code.test.test_rbm OK
+#123.652s   #9      code.test.test_rnnrbm OK
+#77.101s    #5      code.test.test_dA OK
+#39.75s     #4      code.test.test_convolutional_mlp OK
+#30.406s    #3      code.test.test_mlp OK
+#21.132s    #2      code.test.test_logistic_cg OK
+#17.945s    #1      code.test.test_logistic_sgd OK
+
+# Unknown computer with older version of Theano
+#569.882s   #9      code.test.test_rbm OK
+#298.992s   #8      code.test.test_dbn OK
+#268.901s   #7      code.test.test_SdA OK
+#67.292s    #6      code.test.test_dA OK
+#27.485s    #4      code.test.test_mlp OK
+#26.204s    #5      code.test.test_convolutional_mlp OK
+#14.676s    #3      code.test.test_logistic_cg OK
+#10.66s     #2      code.test.test_logistic_sgd OK
+#5.795s     #1      code.hmc.test_hmc.test_hmc OK
+
+script:
+  - cd data
+  - ./download.sh
+  - ls
+  - cd ../code
+  - pwd
+  - ls
+  - export THEANO_FLAGS=warn.ignore_bug_before=all,on_opt_error=raise,on_shape_error=raise
+  - python --version
+  - nosetests $PART
+

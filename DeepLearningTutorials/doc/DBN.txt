@@ -1,0 +1,277 @@
+.. _DBN:
+
+Deep Belief Networks
+====================
+
+.. note::
+  This section assumes the reader has already read through :doc:`logreg`
+  and :doc:`mlp` and :doc:`rbm`. Additionally it uses the following Theano
+  functions and concepts : `T.tanh`_, `shared variables`_, `basic arithmetic
+  ops`_, `T.grad`_, `Random numbers`_, `floatX`_. If you intend to run the
+  code on GPU also read `GPU`_.
+
+.. _T.tanh: http://deeplearning.net/software/theano/tutorial/examples.html?highlight=tanh
+
+.. _shared variables: http://deeplearning.net/software/theano/tutorial/examples.html#using-shared-variables
+
+.. _basic arithmetic ops: http://deeplearning.net/software/theano/tutorial/adding.html#adding-two-scalars
+
+.. _T.grad: http://deeplearning.net/software/theano/tutorial/examples.html#computing-gradients
+
+.. _floatX: http://deeplearning.net/software/theano/library/config.html#config.floatX
+
+.. _GPU: http://deeplearning.net/software/theano/tutorial/using_gpu.html 
+
+.. _Random numbers: http://deeplearning.net/software/theano/tutorial/examples.html#using-random-numbers
+
+
+.. note::
+    The code for this section is available for download `here`_.
+
+.. _here: http://deeplearning.net/tutorial/code/DBN.py
+
+
+Deep Belief Networks
+++++++++++++++++++++
+
+[Hinton06]_ showed that RBMs can be stacked and trained in a greedy manner
+to form so-called Deep Belief Networks (DBN). DBNs are graphical models which
+learn to extract a deep hierarchical representation of the training data.
+They model the joint distribution between observed vector :math:`x` and
+the :math:`\ell` hidden layers :math:`h^k` as follows:
+
+.. math::
+    :label: dbn
+ 
+    P(x, h^1, \ldots, h^{\ell}) = \left(\prod_{k=0}^{\ell-2} P(h^k|h^{k+1})\right) P(h^{\ell-1},h^{\ell})
+
+where :math:`x=h^0`, :math:`P(h^{k-1} | h^k)` is a conditional distribution
+for the visible units conditioned on the hidden units of the RBM at level
+:math:`k`, and :math:`P(h^{\ell-1}, h^{\ell})` is the visible-hidden joint
+distribution in the top-level RBM. This is illustrated in the figure below.
+
+
+.. figure:: images/DBN3.png
+    :align: center
+
+The principle of greedy layer-wise unsupervised training can be applied to
+DBNs with RBMs as the building blocks for each layer [Hinton06]_, [Bengio07]_.
+The process is as follows:
+
+1. Train the first layer as an RBM that models the raw input :math:`x =
+h^{(0)}` as its visible layer.
+
+2. Use that first layer to obtain a representation of the input that will
+be used as data for the second layer. Two common solutions exist. This
+representation can be chosen as being the mean activations
+:math:`p(h^{(1)}=1|h^{(0)})` or samples of :math:`p(h^{(1)}|h^{(0)})`.
+
+3. Train the second layer as an RBM, taking the transformed data (samples or
+mean activations) as training examples (for the visible layer of that RBM).
+
+4. Iterate (2 and 3) for the desired number of layers, each time propagating
+upward either samples or mean values.
+
+5. Fine-tune all the parameters of this deep architecture with respect to a
+proxy for the DBN log- likelihood, or with respect to a supervised training
+criterion (after adding extra learning machinery to convert the learned
+representation into supervised predictions, e.g. a linear classifier).
+
+
+In this tutorial, we focus on fine-tuning via supervised gradient descent.
+Specifically, we use a logistic regression classifier to classify the input
+:math:`x` based on the output of the last hidden layer :math:`h^{(l)}` of the
+DBN. Fine-tuning is then performed via supervised gradient descent of the
+negative log-likelihood cost function. Since the supervised gradient is only
+non-null for the weights and hidden layer biases of each layer (i.e. null for
+the visible biases of each RBM), this procedure is equivalent to initializing
+the parameters of a deep MLP with the weights and hidden layer biases obtained
+with the unsupervised training strategy.
+
+Justifying Greedy-Layer Wise Pre-Training
++++++++++++++++++++++++++++++++++++++++++
+
+Why does such an algorithm work ? Taking as example a 2-layer DBN with hidden
+layers :math:`h^{(1)}` and :math:`h^{(2)}` (with respective weight parameters
+:math:`W^{(1)}` and :math:`W^{(2)}`), [Hinton06]_ established 
+(see also Bengio09]_ for a detailed derivation) that :math:`\log
+p(x)` can be rewritten as,
+
+.. math::
+    :label: dbn_bound
+
+    \log p(x) = &KL(Q(h^{(1)}|x)||p(h^{(1)}|x)) + H_{Q(h^{(1)}|x)} + \\
+                &\sum_h Q(h^{(1)}|x)(\log p(h^{(1)}) + \log p(x|h^{(1)})).
+
+:math:`KL(Q(h^{(1)}|x) || p(h^{(1)}|x))` represents the KL divergence between
+the posterior :math:`Q(h^{(1)}|x)` of the first RBM if it were standalone, and the
+probability :math:`p(h^{(1)}|x)` for the same layer but defined by the entire DBN
+(i.e. taking into account the prior :math:`p(h^{(1)},h^{(2)})` defined by the
+top-level RBM). :math:`H_{Q(h^{(1)}|x)}` is the entropy of the distribution
+:math:`Q(h^{(1)}|x)`. 
+
+It can be shown that if we initialize both hidden layers such that
+:math:`W^{(2)}={W^{(1)}}^T`, :math:`Q(h^{(1)}|x)=p(h^{(1)}|x)` and the KL
+divergence term is null. If we learn the first level RBM and then keep its
+parameters :math:`W^{(1)}` fixed, optimizing Eq. :eq:`dbn_bound` with respect
+to :math:`W^{(2)}` can thus only increase the likelihood :math:`p(x)`.  
+
+Also, notice that if we isolate the terms which depend only on :math:`W^{(2)}`, we
+get: 
+
+.. math:: 
+    \sum_h Q(h^{(1)}|x)p(h^{(1)})
+    
+Optimizing this with respect to :math:`W^{(2)}` amounts to training a second-stage
+RBM, using the output of :math:`Q(h^{(1)}|x)` as the training distribution,
+when :math:`x` is sampled from the training distribution for the first RBM.
+
+Implementation
+++++++++++++++
+
+To implement DBNs in Theano, we will use the class defined in the :doc:`rbm`
+tutorial. One can also observe that the code for the DBN is very similar with the one
+for SdA, because both involve the principle of unsupervised layer-wise
+pre-training followed by supervised fine-tuning as a deep MLP. 
+The main difference is that we use the RBM class instead of the dA
+class.
+
+We start off by defining the DBN class which will store the layers of the 
+MLP, along with their associated RBMs. Since we take the viewpoint of using
+the RBMs to initialize an MLP, the code will reflect this by seperating as
+much as possible the RBMs used to initialize the network and the MLP used for
+classification.
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: start-snippet-1
+  :end-before: end-snippet-1
+
+``self.sigmoid_layers`` will store the feed-forward graphs which together form
+the MLP, while ``self.rbm_layers`` will store the RBMs used to pretrain each
+layer of the MLP.
+
+Next step, we construct ``n_layers`` sigmoid layers (we use the
+``HiddenLayer`` class introduced in :ref:`mlp`, with the only modification
+that we replaced the non-linearity from ``tanh`` to the logistic function
+:math:`s(x) = \frac{1}{1+e^{-x}}`) and ``n_layers`` RBMs, where ``n_layers``
+is the depth of our model.  We link the sigmoid layers such that they form an
+MLP, and construct each RBM such that they share the weight matrix and the
+hidden bias with its corresponding sigmoid layer.
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: # MLP.
+  :end-before: # We now need to add a logistic layer on top of the MLP
+
+All that is left is to stack one last logistic regression layer in order to
+form an MLP. We will use the ``LogisticRegression`` class introduced in
+:ref:`logreg`. 
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: # We now need to add a logistic layer on top of the MLP
+  :end-before: def pretraining_functions
+
+The class also provides a method which generates training functions for each
+of the RBMs. They are returned as a list, where element :math:`i` is a
+function which implements one step of training for the ``RBM`` at layer
+:math:`i`.
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: self.errors = self.logLayer.errors(self.y)
+  :end-before: learning_rate = T.scalar('lr')
+
+In order to be able to change the learning rate during training, we associate a
+Theano variable to it that has a default value.
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: index = T.lscalar('index')
+  :end-before: def build_finetune_functions
+
+Now any function ``pretrain_fns[i]`` takes as arguments ``index`` and
+optionally ``lr`` -- the learning rate. Note that the names of the parameters
+are the names given to the Theano variables (e.g. ``lr``) when they are
+constructed and not the name of the python variables (e.g. ``learning_rate``). Keep
+this in mind when working with Theano. Optionally, if you provide ``k`` (the
+number of Gibbs steps to perform in CD or PCD) this will also become an
+argument of your function.
+
+In the same fashion, the DBN class includes a method for building the
+functions required for finetuning ( a ``train_model``, a ``validate_model``
+and a ``test_model`` function). 
+
+.. literalinclude:: ../code/DBN.py
+  :pyobject: DBN.build_finetune_functions
+
+Note that the returned ``valid_score`` and ``test_score`` are not Theano
+functions, but rather Python functions. These loop over the entire 
+validation set and the entire test set to produce a list of the losses
+obtained over these sets.
+
+
+Putting it all together
++++++++++++++++++++++++
+
+The few lines of code below constructs the deep belief network : 
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: # numpy random generator
+  :end-before: start-snippet-2
+
+There are two stages in training this network: (1) a layer-wise pre-training and
+(2) a fine-tuning stage.
+
+For the pre-training stage, we loop over all the layers of the network. For
+each layer, we use the compiled theano function which determines the
+input to the ``i``-th level RBM and performs one step of CD-k within this RBM.
+This function is applied to the training set for a fixed number of epochs
+given by ``pretraining_epochs``.
+
+.. literalinclude:: ../code/DBN.py
+  :start-after: start-snippet-2
+  :end-before: end-snippet-2
+
+The fine-tuning loop is very similar to the one in the :ref:`mlp` tutorial,
+the only difference being that we now use the functions given by
+``build_finetune_functions``.
+
+Running the Code
+++++++++++++++++
+
+The user can run the code by calling:
+
+.. code-block:: bash
+  
+  python code/DBN.py
+
+With the default parameters, the code runs for 100 pre-training epochs with
+mini-batches of size 10. This corresponds to performing 500,000 unsupervised
+parameter updates. We use an unsupervised learning rate of 0.01, with a
+supervised learning rate of 0.1.  The DBN itself consists of three
+hidden layers with 1000 units per layer. With early-stopping, this configuration
+achieved a minimal validation error of 1.27 with corresponding test
+error of 1.34 after 46 supervised epochs.
+
+On an Intel(R) Xeon(R) CPU X5560 running at 2.80GHz, using a multi-threaded MKL
+library (running on 4 cores), pretraining took 615 minutes with an average of
+2.05 mins/(layer * epoch). Fine-tuning took only 101 minutes or approximately
+2.20 mins/epoch.
+
+Hyper-parameters were selected by optimizing on the validation error. We tested
+unsupervised learning rates in :math:`\{10^{-1}, ..., 10^{-5}\}` and supervised
+learning rates in :math:`\{10^{-1}, ..., 10^{-4}\}`. We did not use any form of
+regularization besides early-stopping, nor did we optimize over the number of
+pretraining updates.
+
+
+Tips and Tricks
++++++++++++++++
+
+One way to improve the running time of your code (given that you have
+sufficient memory available), is to compute the representation of the entire
+dataset at layer ``i`` in a single pass, once the weights of the
+:math:`i-1`-th layers have been fixed. Namely, start by training your first
+layer RBM. Once it is trained, you can compute the hidden units values for
+every example in the dataset and store this as a new dataset which is used to
+train the 2nd layer RBM. Once you trained the RBM for layer 2, you compute, in
+a similar fashion, the dataset for layer 3 and so on. This avoids calculating
+the intermediate (hidden layer) representations, ``pretraining_epochs`` times
+at the expense of increased memory usage.

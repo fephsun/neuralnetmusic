@@ -1,0 +1,166 @@
+.. _rnnrbm:
+
+Modeling and generating sequences of polyphonic music with the RNN-RBM
+========================================================================
+
+.. note::
+  This tutorial demonstrates a basic implementation of the RNN-RBM as described in [BoulangerLewandowski12]_
+  (`pdf <http://www-etud.iro.umontreal.ca/~boulanni/ICML2012.pdf>`_).
+  We assume the reader is familiar with
+  `recurrent neural networks using the scan op <http://deeplearning.net/software/theano/library/scan.html>`_
+  and `restricted Boltzmann machines (RBM) <rbm.html>`_.
+
+.. note::
+  The code for this section is available for download here: `rnnrbm.py <code/rnnrbm.py>`_.
+
+  You will need the modified `Python MIDI package (GPL license) <http://www.iro.umontreal.ca/~lisa/deep/midi.zip>`_ in your ``$PYTHONPATH`` or in the working directory in order to convert MIDI files to and from piano-rolls.
+  The script also assumes that the content of the `Nottingham Database of folk tunes <http://www.iro.umontreal.ca/~lisa/deep/data/Nottingham.zip>`_ has been extracted in the ``../data`` directory.
+  Alternative MIDI datasets are available `here <http://www-etud.iro.umontreal.ca/~boulanni/icml2012>`_.
+  
+  Note that both dependencies above can be setup automatically by running the ``download.sh`` script in the ``../data`` directory.
+
+.. caution::
+  Need Theano 0.6 or more recent.
+
+
+The RNN-RBM
++++++++++++++++++++++++++
+
+The RNN-RBM is an energy-based model for density estimation of temporal sequences, where the feature vector :math:`v^{(t)}` at time step :math:`t` may be high-dimensional.
+It allows to describe multimodal conditional distributions of :math:`v^{(t)}|\mathcal A^{(t)}`, where :math:`\mathcal A^{(t)}\equiv \{v_\tau|\tau<t\}` denotes the *sequence history* at time :math:`t`, via a series of conditional RBMs (one a each time step) whose parameters :math:`b_v^{(t)},b_h^{(t)}` depend on the output of a deterministic RNN with hidden units :math:`u^{(t)}`:
+
+.. math::
+  :label: bv_t
+
+  b_v^{(t)} = b_v + W_{uv} u^{(t-1)}
+
+.. math::
+  :label: bh_t
+
+  b_h^{(t)} = b_h + W_{uh} u^{(t-1)}
+
+and the single-layer RNN recurrence relation is defined by:
+
+.. math::
+  :label: u_t
+
+  u^{(t)} = \tanh (b_u + W_{uu} u^{(t-1)} + W_{vu} v^{(t)})
+
+The resulting model is unrolled in time in the following figure:
+
+.. image:: images/rnnrbm.png
+    :align: center
+
+The overall probability distribution is given by the sum over the :math:`T` time steps in a given sequence:
+
+.. math::
+  :label: prob_rnnrbm
+
+  P(\{v^{(t)}\}) = \sum_{t=1}^T P(v^{(t)} | \mathcal A^{(t)})
+
+where the right-hand side multiplicand is the marginalized probability of the :math:`t^\mathrm{th}` RBM.
+
+Note that for clarity of the implementation, contrarily to [BoulangerLewandowski12]_, we use the obvious naming convention for weight matrices and we use :math:`u^{(t)}` instead of :math:`\hat h^{(t)}` for the recurrent hidden units.
+
+
+
+Implementation
+++++++++++++++
+
+We wish to construct two Theano functions: one to train the RNN-RBM, and one to generate sample sequences from it.
+
+For *training*, i.e. given :math:`\{v^{(t)}\}`, the RNN hidden state :math:`\{u^{(t)}\}` and the associated :math:`\{b_v^{(t)}, b_h^{(t)}\}` parameters are deterministic and can be readily computed for each training sequence.
+A stochastic gradient descent (SGD) update on the parameters can then be estimated via contrastive divergence (CD) on the individual time steps of a sequence in the same way that individual training examples are treated in a mini-batch for regular RBMs.
+
+*Sequence generation* is similar except that the :math:`v^{(t)}` must be sampled sequentially at each time step with a separate (non-batch) Gibbs chain before being passed down to the recurrence and the sequence history.
+
+
+The RBM layer
+---------------
+
+The ``build_rbm`` function shown below builds a Gibbs chain from an input mini-batch (a binary matrix) via the CD approximation.
+Note that it also supports a single frame (a binary vector) in the non-batch case.
+
+.. literalinclude:: ../code/rnnrbm.py
+  :pyobject: build_rbm
+
+The RNN layer
+---------------
+
+The ``build_rnnrbm`` function defines the RNN recurrence relation to obtain the RBM parameters; the recurrence function is flexible enough to serve both in the training scenario where :math:`v^{(t)}` is given and the "batch" RBM is constructed at the end on the whole sequence at once, and in the generation scenario where :math:`v^{(t)}` is sampled separately at each time step using the Gibbs chain defined above.
+
+
+.. literalinclude:: ../code/rnnrbm.py
+  :pyobject: build_rnnrbm
+
+Putting it all together
+---------------------------
+
+We now have all the necessary ingredients to start training our network on real symbolic sequences of polyphonic music.
+
+.. literalinclude:: ../code/rnnrbm.py
+  :pyobject: RnnRbm
+
+Results
+++++++++
+
+We ran the code on the Nottingham database for 200 epochs; training took approximately 24 hours.
+
+The output was the following:
+
+.. code-block:: text
+
+  Epoch 1/200 -15.0308940028
+  Epoch 2/200 -10.4892606673
+  Epoch 3/200 -10.2394696138
+  Epoch 4/200 -10.1431669994
+  Epoch 5/200 -9.7005382843
+  Epoch 6/200 -8.5985647524
+  Epoch 7/200 -8.35115428534
+  Epoch 8/200 -8.26453580552
+  Epoch 9/200 -8.21208991542
+  Epoch 10/200 -8.16847274143
+
+  ... truncated for brevity ...
+
+  Epoch 190/200 -4.74799179994
+  Epoch 191/200 -4.73488515216
+  Epoch 192/200 -4.7326138489
+  Epoch 193/200 -4.73841636884
+  Epoch 194/200 -4.70255511452
+  Epoch 195/200 -4.71872634914
+  Epoch 196/200 -4.7276415885
+  Epoch 197/200 -4.73497644728
+  Epoch 198/200 -inf
+  Epoch 199/200 -4.75554987143
+  Epoch 200/200 -4.72591935412
+
+
+
+The figures below show the piano-rolls of two sample sequences and we provide the corresponding MIDI files:
+
+.. figure:: images/sample1.png
+  :scale: 60%
+
+  Listen to `sample1.mid <http://www-etud.iro.umontreal.ca/~boulanni/sample1.mid>`_
+
+.. figure:: images/sample2.png
+  :scale: 60%
+
+  Listen to `sample2.mid <http://www-etud.iro.umontreal.ca/~boulanni/sample2.mid>`_
+
+
+How to improve this code
++++++++++++++++++++++++++
+
+The code shown in this tutorial is a stripped-down version that can be improved in the following ways:
+
+* Preprocessing: transposing the sequences in a common tonality (e.g. C major / minor) and normalizing the tempo in beats (quarternotes) per minute can have the most effect on the generative quality of the model.
+* Pretraining techniques: initialize the :math:`W,b_v,b_h` parameters with independent RBMs with fully shuffled frames (i.e. :math:`W_{uh}=W_{uv}=W_{uu}=W_{vu}=0`); initialize the :math:`W_{uv},W_{uu},W_{vu},b_u` parameters of the RNN with the auxiliary cross-entropy objective via either SGD or, preferably, Hessian-free optimization [BoulangerLewandowski12]_.
+* Optimization techniques: gradient clipping, Nesterov momentum and the use of NADE for conditional density estimation.
+* Hyperparameter search: learning rate (separately for the RBM and RNN parts), learning rate schedules, batch size, number of hidden units (recurrent and RBM), momentum coefficient, momentum schedule, Gibbs chain length :math:`k` and early stopping.
+* Learn the initial condition :math:`u^{(0)}` as a model parameter.
+
+
+A few samples generated with code including these features are available here: `sequences.zip <http://www-etud.iro.umontreal.ca/~boulanni/sequences.zip>`_.
+
