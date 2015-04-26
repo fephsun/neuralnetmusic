@@ -142,6 +142,27 @@ class DBN(object):
         # The fine-tune cost is the reconstruction error of the entire net.
         self.finetune_cost = ((self.x - self.reverse_layers[0].output)**2).sum()
 
+    def dump_params(self, outLoc):
+        """
+        Takes all of the weights, and stores them as numpy arrays.
+        This is so the params are portable between GPU machines and CPU machines.
+        To load the params, you need to call load_params from a DBN instance
+        with the same size.
+        """
+        dump = {}
+        for layer in range(self.n_layers):
+            dump[(layer, 0)] = numpy.array(self.sigmoid_layers[layer].W.get_value())
+            dump[(layer, 1)] = numpy.array(self.sigmoid_layers[layer].b.get_value())
+            dump[(layer, 2)] = numpy.array(self.reverse_layers[layer].b.get_value())
+        cPickle.dump(dump, open(outLoc, 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+
+    def load_params(self, inLoc):
+        dump = cPickle.load(open(inLoc, 'rb'))
+        for layer in range(self.n_layers):
+            self.sigmoid_layers[layer].W.set_value(dump[(layer, 0)])
+            self.sigmoid_layers[layer].b.set_value(dump[(layer, 1)])
+            self.reverse_layers[layer].b.set_value(dump[(layer, 2)])
+
     def pretraining_functions(self, train_set_x, batch_size, k):
         '''Generates a list of functions, for performing one step of
         gradient descent at a given layer. The function will require
@@ -295,7 +316,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     if True:
         # construct the Deep Belief Network
         dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-                  hidden_layers_sizes=[256, 128, 64])
+                  hidden_layers_sizes=[256, 64])
 
         # start-snippet-2
         #########################
@@ -346,7 +367,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     print '... finetuning the model'
     # early-stopping parameters
     patience = 4 * n_train_batches  # look as this many examples regardless
-    patience_increase = 4.    # wait this much longer when a new best is
+    patience_increase = 2.    # wait this much longer when a new best is
                               # found
     improvement_threshold = 0.995  # a relative improvement of this much is
                                    # considered significant
@@ -418,6 +439,12 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
 
 def generate():
     dbn = cPickle.load(open('total-model.pickle', 'rb'))
+    dbn.dump_params('test.pickle')
+    dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
+                  hidden_layers_sizes=[256, 64])
+    dbn.load_params('test.pickle')
+
+
     # raw_x = cPickle.load(open('bach_data.pickle', 'rb'))
     # train_set_x = theano.shared(raw_x)
     # top_level = dbn.label(train_set_x, 0)
@@ -431,12 +458,12 @@ def generate():
     firstIm = output[0, :].reshape([88, 64])
     outIm = Image.fromarray((firstIm*255).astype('uint8'))
     outIm.save('test.png')
-    threshold = 0.1
+    threshold = 0.3
     firstIm[firstIm > threshold] = 1
     firstIm[firstIm <= threshold] = 0
-    midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
+    midiwrite('test.midi', firstIm.T, r=(12, 109), dt=32)
 
 
 
 if __name__ == '__main__':
-    train_dbn()
+    generate()
