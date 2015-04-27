@@ -281,7 +281,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     pretrain_lr=0.01, k=1, training_epochs=1000,
     batch_size=10):
 
-    raw_x = cPickle.load(open('bach_data.pickle', 'rb'))
+    raw_x = cPickle.load(open('bach_data.pickle', 'rb')).astype(numpy.float32)
     train_set_x = theano.shared(raw_x)
     
 
@@ -424,14 +424,14 @@ def generate():
     # numpy.savetxt('out.csv', top_level, delimiter=',')
 
     from midi.utils import midiwrite
-    top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
+    top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float32)
     top_level = theano.shared(top_level)
     output = dbn.generate(top_level)
     output = output.reshape([10, 88*64])
     firstIm = output[0, :].reshape([88, 64])
     outIm = Image.fromarray((firstIm*255).astype('uint8'))
     outIm.save('test.png')
-    threshold = 0.1
+    threshold = 0.3
     firstIm[firstIm > threshold] = 1
     firstIm[firstIm <= threshold] = 0
     midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
@@ -439,4 +439,4 @@ def generate():
 
 
 if __name__ == '__main__':
-    train_dbn()
+    generate()
