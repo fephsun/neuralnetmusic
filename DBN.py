@@ -302,7 +302,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     pretrain_lr=0.01, k=1, training_epochs=1000,
     batch_size=10):
 
-    raw_x = cPickle.load(open('bach_data.pickle', 'rb')).astype(numpy.float32)
+    raw_x = cPickle.load(open('bach_data2.pickle', 'rb')).astype(numpy.float32)
     train_set_x = theano.shared(raw_x)
     
 
@@ -316,7 +316,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     if True:
         # construct the Deep Belief Network
         dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-                  hidden_layers_sizes=[256, 64])
+                  hidden_layers_sizes=[1024, 256, 64])
 
         # start-snippet-2
         #########################
@@ -367,7 +367,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     print '... finetuning the model'
     # early-stopping parameters
     patience = 4 * n_train_batches  # look as this many examples regardless
-    patience_increase = 2.    # wait this much longer when a new best is
+    patience_increase = 4.    # wait this much longer when a new best is
                               # found
     improvement_threshold = 0.995  # a relative improvement of this much is
                                    # considered significant
@@ -435,14 +435,12 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
 
-    cPickle.dump(dbn, open('total-model.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+    dbn.dump_params('total-model2.pickle')
 
 def generate():
-    dbn = cPickle.load(open('total-model.pickle', 'rb'))
-    dbn.dump_params('test.pickle')
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-                  hidden_layers_sizes=[256, 64])
-    dbn.load_params('test.pickle')
+                  hidden_layers_sizes=[1024, 256, 64])
+    dbn.load_params('total-model.pickle')
 
 
     # raw_x = cPickle.load(open('bach_data.pickle', 'rb'))
@@ -466,4 +464,4 @@ def generate():
 
 
 if __name__ == '__main__':
-    generate()
+    train_dbn()
