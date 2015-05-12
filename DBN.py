@@ -4,6 +4,7 @@ import cPickle
 import os
 import sys
 import time
+import os.path as path
 
 import numpy
 
@@ -15,6 +16,10 @@ from DeepLearningTutorials.code.mlp import HiddenLayer
 from DeepLearningTutorials.code.rbm import RBM
 
 from PIL import Image
+
+import myparser
+from midi.utils import midiwrite
+
 
 # compute_test_value is 'off' by default, meaning this feature is inactive
 theano.config.compute_test_value = 'off' # Use 'warn' to activate this feature
@@ -66,6 +71,7 @@ class DBN(object):
 
         # allocate symbolic variables for the data
         self.x = T.matrix('x')  # the data is presented as rasterized images
+        self.x_mask = T.matrix('x_mask')    # For partial information.
 
         # end-snippet-1
         # The DBN is an MLP, for which all weights of intermediate
@@ -121,7 +127,11 @@ class DBN(object):
         # And build the upside-down network.  This shares parameters with the forward network.
         # Except the weights are transposed and stuff.
         reverse_input = self.sigmoid_layers[-1].output
+        self.isolated_reverse_input = theano.shared(
+            numpy.zeros([10, hidden_layers_sizes[-1]]))
+        isolated_input = self.isolated_reverse_input
         self.reverse_layers = [None] * self.n_layers
+        self.isolated_reverse = [None] * self.n_layers
         for i in reversed(xrange(self.n_layers)):    
             if i == 0:
                 out_size = n_ins
@@ -135,12 +145,33 @@ class DBN(object):
                 b=self.rbm_layers[i].vbias,
                 activation=T.nnet.sigmoid
             )
+            isolated_sigmoid = HiddenLayer(rng=numpy_rng,
+                input=isolated_input,
+                n_in=hidden_layers_sizes[i],
+                n_out=out_size,
+                W=self.sigmoid_layers[i].W.T,
+                b=self.rbm_layers[i].vbias,
+                activation=T.nnet.sigmoid
+            )
+            
             reverse_input = reverse_sigmoid.output
+            isolated_input = isolated_sigmoid.output
             self.reverse_layers[i] = reverse_sigmoid
+            self.isolated_reverse[i] = isolated_sigmoid
 
 
         # The fine-tune cost is the reconstruction error of the entire net.
         self.finetune_cost = ((self.x - self.reverse_layers[0].output)**2).sum()
+        # # Cost of labelling the first layer, assuming partial information.
+        # self.fake_first_layer = HiddenLayer(rng=numpy_rng,
+        #     input=self.fake_intermediate,
+        #     n_in=hidden_layers_sizes[0],
+        #     n_out=n_ins,
+        #     W=self.reverse_layers[0].W,
+        #     b=self.reverse_layers[0].b,
+        #     activation=T.nnet.sigmoid
+        # )
+        self.l1_cost = (((self.x - self.isolated_reverse[0].output) * self.x_mask)**2).sum()
 
     def dump_params(self, outLoc):
         """
@@ -283,19 +314,26 @@ class DBN(object):
         )
         return generator()
 
-    def label(self, in_x, outer_index):
+    def label(self, to_label, x_mask, learning_rate):
         """
-        Get the top level values, given a piano roll.
+        Estimate top layer, given an incomplete layer 1.
+        x_mask represents which values of to_label are unknown.
         """
-        idx = T.lscalar('idx')
-        generator = theano.function(
-            [idx],
-            self.sigmoid_layers[-1].output,
-            givens = {
-                self.sigmoid_layers[0].input: in_x[idx:idx+10],
+        grad = T.grad(self.l1_cost, self.isolated_reverse_input)
+        # compute list of fine-tuning updates
+        updates = (self.isolated_reverse_input, 
+            self.isolated_reverse_input - grad * learning_rate)
+
+        train_fn = theano.function(
+            inputs=[],
+            outputs=self.l1_cost,
+            updates=[updates],
+            givens={
+                self.x: to_label,
+                self.x_mask: x_mask,
             }
         )
-        return generator(outer_index)
+        return train_fn
 
 
 def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
@@ -437,33 +475,81 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
 
     cPickle.dump(dbn, open('total-model.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
-def generate():
-    dbn = cPickle.load(open('total-model.pickle', 'rb'))
-    dbn.dump_params('test.pickle')
+def melody_blocker(snippet):
+    """
+    Makes a mask where anything above the top line of the snippet is 1.
+    """
+    envelope = numpy.copy(snippet)
+    _, length = snippet.shape
+    for i in range(length):
+        occupied = [x for x in range(88) if snippet[x, i] != 0]
+        if len(occupied) == 0:
+            continue
+        top = max(occupied)
+        envelope[top:, i] = 1
+        for pitch in occupied:
+            envelope[pitch-2:pitch+3, i] = 1
+    return envelope
+
+def generate(top_level, rootLoc='./', save=True, threshold=0.5):
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-                  hidden_layers_sizes=[256, 64])
-    dbn.load_params('test.pickle')
+                  hidden_layers_sizes=[1024, 256, 64])
+    dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
 
-
-    # raw_x = cPickle.load(open('bach_data.pickle', 'rb'))
-    # train_set_x = theano.shared(raw_x)
-    # top_level = dbn.label(train_set_x, 0)
-    # numpy.savetxt('out.csv', top_level, delimiter=',')
-
-    from midi.utils import midiwrite
-    top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
-    top_level = theano.shared(top_level)
+    # top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
+    # top_level = theano.shared(top_level)
     output = dbn.generate(top_level)
     output = output.reshape([10, 88*64])
     firstIm = output[0, :].reshape([88, 64])
     outIm = Image.fromarray((firstIm*255).astype('uint8'))
-    outIm.save('test.png')
-    threshold = 0.3
+    outIm.save(path.join(rootLoc, 'test.png'))
     firstIm[firstIm > threshold] = 1
     firstIm[firstIm <= threshold] = 0
-    midiwrite('test.midi', firstIm.T, r=(12, 109), dt=32)
+    if save:
+        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
+    return firstIm
+
+def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
+    dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
+              hidden_layers_sizes=[1024, 256, 64])
+    dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
+
+    snippet = numpy.zeros([88, 64])
+    myparser.read(fileLoc, snippet, speed=2.0)
+    # snippet_range = make_envelope(snippet)
+    snippet_range = melody_blocker(snippet)
+    linear_snippet = snippet.reshape([88*64])
+    linear_snippet_range = snippet_range.reshape([88*64])
+    in_data = numpy.zeros([10, 88*64])
+    x_mask = numpy.zeros([10, 88*64])
+    for i in range(10):
+        in_data[i, :] = linear_snippet
+        x_mask[i, :] = linear_snippet_range
 
 
+    # Do gradient descent to estimate the activations on layer 1.
+    new_vals = theano.shared(
+        value=numpy.random.random_sample([10, 64]),
+    )
+    f = theano.function(
+        inputs=[],
+        updates=[(dbn.isolated_reverse_input, new_vals)],
+    )
+    f()
+    trainer = dbn.label(in_data, x_mask, learn_rate)
+    for i in range(n_iters):
+        print trainer()
+
+    # Then, generate using it.
+    result = generate(dbn.isolated_reverse_input, rootLoc=rootLoc, save=False,
+        threshold=threshold)
+    # And add the melody on top.
+    # final = result + snippet
+    final = result * (1.0 - snippet_range)
+    final[final > 0] = 1
+    midiwrite(path.join(rootLoc, 'test.midi'), final.T, r=(12, 109), dt=64)
 
 if __name__ == '__main__':
-    generate()
+    import sys
+    label(path.dirname(sys.argv[0]), sys.argv[1], float(sys.argv[2]),
+        int(sys.argv[3]), float(sys.argv[4]))

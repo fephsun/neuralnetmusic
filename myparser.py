@@ -3,7 +3,13 @@ import numpy as np
 from PIL import Image
 import cPickle
 
-def read(filename, outMtx=None):
+continuous = True
+
+def read(filename, outMtx=None, speed=1.0):
+    # speed controls how much to expand or contract the piano roll.
+    # So, speed=2 will make a quarter note in the xml equal to an
+    # eighth note on the piano roll.
+    _, maxLen = outMtx.shape
     tree = ET.parse(filename)
     allNotes = tree.getroot()
 
@@ -29,7 +35,7 @@ def read(filename, outMtx=None):
                 inChord = (note.find('chord') is not None)
 
                 try:
-                    dur = float(note.findtext('duration')) / durPer16th
+                    dur = float(note.findtext('duration')) / durPer16th / speed
                 except TypeError:
                     # Notes without duration are grace notes.  Skip them.
                     continue
@@ -53,9 +59,13 @@ def read(filename, outMtx=None):
                 if thisTime == int(thisTime):
                     # Don't log notes that are on a 32nd offbeat.
                     if outMtx is not None:
-                        for i in range(max(int(dur), 1)):
-                            outMtx[pitchNum, thisTime + i] = 1
-
+                        if continuous:
+                            for i in range(max(int(dur), 1)):
+                                if thisTime + i < maxLen:
+                                    outMtx[pitchNum, thisTime + i] = 1
+                        else:
+                            if thisTime < maxLen:
+                                outMtx[pitchNum, thisTime] = 1
                 # Deal with chord semantics.
                 # In a chord, every note after the first is marked with <chord />
                 if not inChord:
@@ -64,7 +74,7 @@ def read(filename, outMtx=None):
 
             # At the end of each measure, check for beat length consistency.
             # We only support 4/4 time right now.
-            if int(measure.get('number')) * 16 not in beatCounter.values():
+            if int(measure.get('number')) * 16 / speed not in beatCounter.values():
                 print filename
                 print beatCounter
                 print measure.get('number')
@@ -104,42 +114,53 @@ def fileToData(path):
     return finalData
 
 def main():
-    minor = [
+    chorales = [
         './chorales/0408.xml',
         './chorales/0507.xml',
         './chorales/0707.xml',
+        './chorales/0806.xml',
+        './chorales/0907.xml',
         './chorales/1007.xml',
+        './chorales/1207.xml',
+        './chorales/1306.xml',
         './chorales/1405.xml',
         './chorales/1606.xml',
         './chorales/1805.xml',
-        './chorales/2606.xml',
-        './chorales/2806.xml',
-    ]
-    major = [
-        './chorales/0806.xml',
-        './chorales/0907.xml',
-        './chorales/1207.xml',
-        './chorales/1306.xml',
         './chorales/2007.xml',
         './chorales/2506.xml',
+        './chorales/2606.xml',
+        './chorales/2806.xml',
         './chorales/3006.xml',
+        './chorales/3706.xml',
+        './chorales/3907.xml',
+        './chorales/4003.xml',
+        './chorales/4006.xml',
+        './chorales/4008.xml',
+        './chorales/4207.xml',
+        './chorales/4407.xml',
+        './chorales/4507.xml',
+        './chorales/4803.xml',
+        './chorales/4807.xml',
+        './chorales/5505.xml',
+        './chorales/5605.xml',
+        './chorales/6005.xml',
+        './chorales/6408.xml',
+        './chorales/6507.xml',
+        './chorales/6707.xml',
         './chorales/30200.xml',
         './chorales/34000.xml',
         './chorales/40100.xml',
     ]
 
-    mozart = [
-        './training/k545.xml'
-    ]
-
     total = None
-    for f in minor + major + mozart:
+    for f in chorales:
         thisData = fileToData(f)
         if total is None:
             total = thisData
         else:
             total = np.concatenate((total, thisData), axis=0)
     print total.shape
-    cPickle.dump(total, open('bach_data.pickle', 'wb'))
+    cPickle.dump(total, open('bach_data2.pickle', 'wb'))
 
-main()
+if __name__ == '__main__':
+    main()
