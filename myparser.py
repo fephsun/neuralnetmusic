@@ -9,22 +9,33 @@ def read(filename, outMtx=None, speed=1.0):
     # speed controls how much to expand or contract the piano roll.
     # So, speed=2 will make a quarter note in the xml equal to an
     # eighth note on the piano roll.
-    _, maxLen = outMtx.shape
+    if outMtx is not None:
+        _, maxLen = outMtx.shape
+    else:
+        maxLen = 1
     tree = ET.parse(filename)
     allNotes = tree.getroot()
 
     beatCounter = {}    # Number of quarter notes.
     lastCounter = 0     # A hack to deal with annoying chord semantics.
     durPer16th = 1.0
+    beatsPerMeasure=4
 
     for part in allNotes.iter('part'):
         partId = part.get('id')
         for measure in part.iter('measure'):
+            # SKIP implicit measures.
+            if measure.get('implicit') is not None:
+                continue
 
             # Attributes are sandwiched in a stupid place.
             attr = measure.find('attributes')
             if attr is not None and attr.findtext('divisions') is not None:
                 durPer16th = float(attr.findtext('divisions')) / 4.0
+            if attr is not None and attr.findtext('time') is not None:
+                timeTree = attr.find('time')
+                beatsPerMeasure = int(timeTree.findtext('beats'))
+                print str(beatsPerMeasure) + ' beats per measure'
 
             for note in measure.iter('note'):
                 # Get part.
@@ -74,9 +85,11 @@ def read(filename, outMtx=None, speed=1.0):
 
             # At the end of each measure, check for beat length consistency.
             # We only support 4/4 time right now.
-            if int(measure.get('number')) * 16 / speed not in beatCounter.values():
+            if int(measure.get('number')) * 4 * beatsPerMeasure / speed \
+                != beatCounter[(partId, voice, staff)]:
                 print filename
                 print beatCounter
+                print (partId, voice, staff)
                 print measure.get('number')
                 assert False
 
@@ -108,7 +121,7 @@ def fileToData(path):
     for i in range(nWindows):
         thisSlice = outMtx[:, i*16:i*16+windowSize*16]
         finalData[i, :] = thisSlice.reshape([88*16*windowSize])
-        if i == 0:
+        if i == 1:
             outIm = Image.fromarray(thisSlice.astype('uint8')*255)
             outIm.save('test.png')
     return finalData
@@ -144,23 +157,46 @@ def main():
         './chorales/5505.xml',
         './chorales/5605.xml',
         './chorales/6005.xml',
+        './chorales/6206.xml',
         './chorales/6408.xml',
         './chorales/6507.xml',
         './chorales/6707.xml',
+        './chorales/7206.xml',
+        './chorales/7305.xml',
+        './chorales/7706.xml',
+        './chorales/8107.xml',
+        './chorales/9906.xml',
+        './chorales/10406.xml',
+        './chorales/12406.xml',
+        './chorales/13306.xml',
+        './chorales/14007.xml',
+        './chorales/14406.xml',
         './chorales/30200.xml',
         './chorales/34000.xml',
         './chorales/40100.xml',
     ]
 
+    joplin = [
+        './joplin/searchlight.xml',
+        './joplin/strenous.xml',
+        './joplin/maple_leaf.xml',
+        './joplin/entertainer.xml',
+        './joplin/syncopations.xml',
+        './joplin/cleopha.xml',
+        './joplin/winners.xml',
+        './joplin/winners_2.xml',
+        './joplin/alabama.xml',
+    ]
+
     total = None
-    for f in chorales:
+    for f in joplin:
         thisData = fileToData(f)
         if total is None:
             total = thisData
         else:
             total = np.concatenate((total, thisData), axis=0)
     print total.shape
-    cPickle.dump(total, open('bach_data2.pickle', 'wb'))
+    cPickle.dump(total, open('joplin_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
