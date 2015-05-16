@@ -1,0 +1,718 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>FormatChooser</class>
+ <widget class="QDialog" name="FormatChooser">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>341</width>
+    <height>421</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Choose Formats</string>
+  </property>
+  <widget class="QDialogButtonBox" name="buttonBox">
+   <property name="geometry">
+    <rect>
+     <x>140</x>
+     <y>380</y>
+     <width>191</width>
+     <height>32</height>
+    </rect>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+   </property>
+   <property name="centerButtons">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QGroupBox" name="groupBox_outFormats">
+   <property name="geometry">
+    <rect>
+     <x>220</x>
+     <y>10</y>
+     <width>111</width>
+     <height>301</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string comment="outFormats">Output Formats</string>
+   </property>
+   <widget class="QCheckBox" name="checkBox_mscz">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>20</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Compressed MuseScore Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mscz</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mscx">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MuseScore Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mscx</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_xml">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>60</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MusicXML Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.xml</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mxl">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>80</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Compressed MusicXML Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mxl</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mid">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>100</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Standard MIDI File</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mid</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_pdf">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>120</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <weight>75</weight>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="toolTip">
+     <string>PDF File</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.pdf</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_ps">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>140</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>PostScript File</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.ps</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_png">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>160</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>PNG Bitmap Graphic</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.png</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_svg">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>180</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Scalable Vector Graphic</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.svg</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_ly">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>200</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>LilyPond Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.ly</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_wav">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>220</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Wave Audio</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.wav</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_flac">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>240</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Flac Audio</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.flac</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_ogg">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>260</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Ogg Vorbis Audio</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.ogg</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mp3">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>280</y>
+      <width>71</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MP3 Audio</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mp3</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QGroupBox" name="groupBox_inFormats">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>10</y>
+     <width>121</width>
+     <height>401</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string comment="inFormat">Input Formats</string>
+   </property>
+   <widget class="QCheckBox" name="checkBox_mscz">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>20</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <weight>75</weight>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="toolTip">
+     <string>Compressed MuseScore Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mscz</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mscx">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MuseScore Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mscx</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_msc">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>60</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Old MuseScore Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.msc</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_xml">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>80</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MusicXML Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.xml</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mxl">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>100</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Compressed MusicXML Format</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mxl</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mid">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>120</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Standard MIDI FIle</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mid</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_midi">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>140</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MIDI Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.midi</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_kar">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>160</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MIDI Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.kar</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_md">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>180</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>MuseData Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.md</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_cap">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>200</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Capella Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.cap</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_bww">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>220</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Bagpipe Music Writer Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.bww</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_mgu">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>240</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>BB Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.mgu</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_sgu">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>260</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>BB Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.sgu</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_ove">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>280</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Overture Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.ove</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_scw">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>300</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>Score Writer Files</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.scw</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_GTP">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>320</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="statusTip">
+     <string>Guitar Pro</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.GTP</string>
+    </property>
+    <property name="checkable">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_GP3">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>340</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="statusTip">
+     <string>Guitar Pro</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.GP3</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_GP4">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>360</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="statusTip">
+     <string>Guitar Pro</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.GP4</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_GP5">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>380</y>
+      <width>82</width>
+      <height>18</height>
+     </rect>
+    </property>
+    <property name="statusTip">
+     <string>Guitar Pro</string>
+    </property>
+    <property name="text">
+     <string notr="true">*.GP5</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QPushButton" name="pushButton_reset">
+   <property name="geometry">
+    <rect>
+     <x>140</x>
+     <y>350</y>
+     <width>191</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="text">
+    <string>Reset to defaults</string>
+   </property>
+   <property name="autoDefault">
+    <bool>false</bool>
+   </property>
+  </widget>
+  <widget class="QCheckBox" name="checkBox_traverseSubdirs">
+   <property name="geometry">
+    <rect>
+     <x>140</x>
+     <y>320</y>
+     <width>191</width>
+     <height>18</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Process subdirectories</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>160</x>
+     <y>170</y>
+     <width>41</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string notr="true"/>
+   </property>
+   <property name="accessibleDescription">
+    <string notr="true"/>
+   </property>
+   <property name="text">
+    <string notr="true">===&gt;</string>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>FormatChooser</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>270</x>
+     <y>304</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>FormatChooser</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>270</x>
+     <y>310</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
