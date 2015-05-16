@@ -355,7 +355,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     if True:
         # construct the Deep Belief Network
         dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-                  hidden_layers_sizes=[1024, 256, 64])
+                  hidden_layers_sizes=[1024, 256, 64, 16])
 
         # start-snippet-2
         #########################
@@ -494,7 +494,7 @@ def melody_blocker(snippet):
 
 def generate(top_level=None, rootLoc='./', save=True, threshold=0.5):
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-                  hidden_layers_sizes=[1024, 256, 64])
+                  hidden_layers_sizes=[1024, 256, 64, 16])
     dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
 
     # top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
