@@ -94,6 +94,8 @@ function accept() {
     cursor.voice = 0;
     var tempScore = new Score();
     tempScore.appendPart();
+    tempScore.appendPart();
+    tempScore.appendPart();
     tempScore.appendMeasures(8);  // Fix me.
     tempScore.keysig = origScore.keysig;
     var writeCursor = new Cursor(tempScore);
@@ -110,7 +112,9 @@ function accept() {
         while (cursor.tick() < selectionEnd.tick()) {
             copyThing(cursor, writeCursor);
         }
-        writeCursor.voice += 1;
+        // tempScore.appendPart()
+        writeCursor.staff += 1;
+        writeCursor.voice = 0;
     }
     // Save, load, save.  Because musescore is buggy and can't save xml directly.
     tempScore.save(tempLoc + 'test.mscz', 'mscz')

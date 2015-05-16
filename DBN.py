@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import os.path as path
+import copy
 
 import numpy
 
@@ -354,7 +355,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     if True:
         # construct the Deep Belief Network
         dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-                  hidden_layers_sizes=[1024, 256, 64])
+                  hidden_layers_sizes=[1024, 256, 64, 16])
 
         # start-snippet-2
         #########################
@@ -491,22 +492,25 @@ def melody_blocker(snippet):
             envelope[pitch-2:pitch+3, i] = 1
     return envelope
 
-def generate(top_level, rootLoc='./', save=True, threshold=0.5):
+def generate(top_level=None, rootLoc='./', save=True, threshold=0.5):
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-                  hidden_layers_sizes=[1024, 256, 64])
+                  hidden_layers_sizes=[1024, 256, 64, 16])
     dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
 
     # top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
     # top_level = theano.shared(top_level)
+    if top_level is None:
+        top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
     output = dbn.generate(top_level)
     output = output.reshape([10, 88*64])
     firstIm = output[0, :].reshape([88, 64])
     outIm = Image.fromarray((firstIm*255).astype('uint8'))
     outIm.save(path.join(rootLoc, 'test.png'))
-    firstIm[firstIm > threshold] = 1
-    firstIm[firstIm <= threshold] = 0
+    if threshold is not None:
+        firstIm[firstIm > threshold] = 1
+        firstIm[firstIm <= threshold] = 0
     if save:
-        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
+        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=32)
     return firstIm
 
 def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
@@ -529,7 +533,7 @@ def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
 
     # Do gradient descent to estimate the activations on layer 1.
     new_vals = theano.shared(
-        value=numpy.random.random_sample([10, 64]),
+        value=numpy.random.sample([10, 64]),
     )
     f = theano.function(
         inputs=[],
@@ -543,14 +547,23 @@ def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
     # Then, generate using it.
     result = generate(dbn.isolated_reverse_input, rootLoc=rootLoc, save=False,
         threshold=threshold)
-    # And add the melody on top.
-    # final = result + snippet
+    # This is really hacky - if there is no threshold, just return the
+    # result, don't try to make music.
+    if threshold is None:
+        result = result + snippet
+        result[result > 1] = 1
+        return result
     final = result * (1.0 - snippet_range)
-    final[final > 0] = 1
+
+    final[final > 0.5] = 1
     midiwrite(path.join(rootLoc, 'test.midi'), final.T, r=(12, 109), dt=64)
+    return final
 
 if __name__ == '__main__':
     train_dbn()
-    #import sys
-    #label(path.dirname(sys.argv[0]), sys.argv[1], float(sys.argv[2]),
-    #    int(sys.argv[3]), float(sys.argv[4]))
+    # import sys
+    # if sys.argv[1] == 'gen':
+    #     generate()
+    # else:
+    #     label(path.dirname(sys.argv[0]), sys.argv[1], float(sys.argv[2]),
+    #         int(sys.argv[3]), float(sys.argv[4]))
