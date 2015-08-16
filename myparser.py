@@ -96,9 +96,10 @@ class CountingNoteAdder(object):
         self.maxLen = max(self.maxLen, time + dur)
 
 class LegatoNoteAdder(object):
-    def __init__(self, maxLen):
+    def __init__(self, maxLen, transpose=0):
         self.maxLen = maxLen
         self.mtx = np.zeros([88, maxLen])
+        self.transpose = transpose
 
     def handle(self, time, pitch, dur):
         if time != int(time):
@@ -106,7 +107,7 @@ class LegatoNoteAdder(object):
         rounded_dur = math.ceil(dur)
         if time + rounded_dur >= self.maxLen:
             return
-        self.mtx[time:time+rounded_dur] = 1
+        self.mtx[pitch + self.transpose, time:time+rounded_dur] = 1
 
 def pitchGetter(letter, octave, offset):
     basePitch = {
@@ -120,18 +121,18 @@ def pitchGetter(letter, octave, offset):
     }
     return octave * 12 + offset + basePitch[letter]
 
-def fileToData(path):
+def fileToData(path, transpose=0):
     counter = CountingNoteAdder()
     read(path, counter.handle)
     maxLen = int(math.ceil(counter.maxLen / 16) * 16)
     print maxLen
-    noteMaker = LegatoNoteAdder(maxLen)
+    noteMaker = LegatoNoteAdder(maxLen, transpose)
     read(path, noteMaker.handle)
     outMtx = noteMaker.mtx
 
     print "Writing outputs"
     windowSize = 4
-    nWindows = maxLen - windowSize + 1
+    nWindows = maxLen / 16 - windowSize
     finalData = np.zeros([nWindows, 88*16*windowSize])
     for i in range(nWindows):
         thisSlice = outMtx[:, i*16:i*16+windowSize*16]
@@ -204,14 +205,15 @@ def main():
     ]
 
     total = None
-    for f in joplin[0:1]:
-        thisData = fileToData(f)
-        if total is None:
-            total = thisData
-        else:
-            total = np.concatenate((total, thisData), axis=0)
+    for f in joplin:
+        for transpose in range(-6, 6):
+            thisData = fileToData(f, transpose)
+            if total is None:
+                total = thisData
+            else:
+                total = np.concatenate((total, thisData), axis=0)
     print total.shape
-    cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+    # cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
