@@ -495,12 +495,12 @@ def melody_blocker(snippet):
 def generate(top_level=None, rootLoc='./', save=True, threshold=0.5):
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
                   hidden_layers_sizes=[1024, 256, 64, 16])
-    dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
+    dbn.load_params(path.join(rootLoc, 'joplin-model.pickle'))
 
     # top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
     # top_level = theano.shared(top_level)
     if top_level is None:
-        top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
+        top_level = numpy.random.randint(2, size=[10, 16]).astype(dtype=numpy.float64)
     output = dbn.generate(top_level)
     output = output.reshape([10, 88*64])
     firstIm = output[0, :].reshape([88, 64])
@@ -510,13 +510,13 @@ def generate(top_level=None, rootLoc='./', save=True, threshold=0.5):
         firstIm[firstIm > threshold] = 1
         firstIm[firstIm <= threshold] = 0
     if save:
-        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=32)
+        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
     return firstIm
 
 def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
     dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-              hidden_layers_sizes=[1024, 256, 64])
-    dbn.load_params(path.join(rootLoc, 'total-model2.pickle'))
+              hidden_layers_sizes=[1024, 256, 64, 16])
+    dbn.load_params(path.join(rootLoc, 'joplin-model.pickle'))
 
     snippet = numpy.zeros([88, 64])
     myparser.read(fileLoc, snippet, speed=2.0)
