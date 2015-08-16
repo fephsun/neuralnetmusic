@@ -337,11 +337,11 @@ class DBN(object):
         return train_fn
 
 
-def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
+def train_dbn(finetune_lr=0.001, pretraining_epochs=100,
     pretrain_lr=0.01, k=1, training_epochs=1000,
     batch_size=10):
 
-    raw_x = cPickle.load(open('joplin_data.pickle', 'rb')).astype(numpy.float32)
+    raw_x = cPickle.load(open('bach_data.pickle', 'rb')).astype(numpy.float32)
     train_set_x = theano.shared(raw_x)
     
 
@@ -352,7 +352,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
     # numpy random generator
     numpy_rng = numpy.random.RandomState()
     print '... building the model'
-    if True:
+    if False:
         # construct the Deep Belief Network
         dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
                   hidden_layers_sizes=[1024, 256, 64, 16])
@@ -474,7 +474,7 @@ def train_dbn(finetune_lr=0.01, pretraining_epochs=100,
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
 
-    dbn.dump_params('joplin-model.pickle')
+    dbn.dump_params('bach-model-16.pickle')
 
 def melody_blocker(snippet):
     """
