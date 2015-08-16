@@ -1,25 +1,20 @@
 import xml.etree.ElementTree as ET
+import math
 import numpy as np
 from PIL import Image
 import cPickle
 
-continuous = True
-
-def read(filename, outMtx=None, speed=1.0):
+def read(filename, noteAdder, speed=1.0):
     # speed controls how much to expand or contract the piano roll.
     # So, speed=2 will make a quarter note in the xml equal to an
     # eighth note on the piano roll.
-    if outMtx is not None:
-        _, maxLen = outMtx.shape
-    else:
-        maxLen = 1
     tree = ET.parse(filename)
     allNotes = tree.getroot()
 
-    beatCounter = {}    # Number of quarter notes.
-    lastCounter = 0     # A hack to deal with annoying chord semantics.
-    durPer16th = 1.0
-    beatsPerMeasure=4
+    beatCounter = {}    # Number of 16th notes.
+    lastCounter = 0     # Records the beat of the last thing we processed.
+    durPer16th = 1.0    # We read this value from the xml - this is just a default
+    beatsPerMeasure=4   # see above
 
     for part in allNotes.iter('part'):
         partId = part.get('id')
@@ -28,7 +23,10 @@ def read(filename, outMtx=None, speed=1.0):
             if measure.get('implicit') is not None:
                 continue
 
-            # Attributes are sandwiched in a stupid place.
+            # Attributes are sandwiched in a stupid place - in any measure.
+            # Usually, the first measure will have attributes, but other measures
+            # may have more attributes, especially if the attributes change in
+            # the middle of a piece (different time signature, etc.).
             attr = measure.find('attributes')
             if attr is not None and attr.findtext('divisions') is not None:
                 durPer16th = float(attr.findtext('divisions')) / 4.0
@@ -43,6 +41,9 @@ def read(filename, outMtx=None, speed=1.0):
                 staff = note.findtext('staff')
                 if (partId, voice, staff) not in beatCounter:
                     beatCounter[(partId, voice, staff)] = 0
+                # In a chord, every note after the first is marked with <chord />
+                # Chords need special treatment - you can't increment the beat
+                # when in the middle of a chord.
                 inChord = (note.find('chord') is not None)
 
                 try:
@@ -67,24 +68,16 @@ def read(filename, outMtx=None, speed=1.0):
                     thisTime = lastCounter
                 else:
                     thisTime = beatCounter[(partId, voice, staff)]
-                if thisTime == int(thisTime):
-                    # Don't log notes that are on a 32nd offbeat.
-                    if outMtx is not None:
-                        if continuous:
-                            for i in range(max(int(dur), 1)):
-                                if thisTime + i < maxLen:
-                                    outMtx[pitchNum, thisTime + i] = 1
-                        else:
-                            if thisTime < maxLen:
-                                outMtx[pitchNum, thisTime] = 1
+                noteAdder(thisTime, pitchNum, dur)
                 # Deal with chord semantics.
-                # In a chord, every note after the first is marked with <chord />
                 if not inChord:
                     lastCounter = beatCounter[(partId, voice, staff)]
                     beatCounter[(partId, voice, staff)] += dur
 
             # At the end of each measure, check for beat length consistency.
-            # We only support 4/4 time right now.
+            # Sometimes, music will put three beats in a 4/4 measure.  In that
+            # case, we crash.  You should go into the piece and fix the problem
+            # manually, before re-running.
             if int(measure.get('number')) * 4 * beatsPerMeasure / speed \
                 != beatCounter[(partId, voice, staff)]:
                 print filename
@@ -93,7 +86,28 @@ def read(filename, outMtx=None, speed=1.0):
                 print measure.get('number')
                 assert False
 
-    return outMtx, max(beatCounter.values())
+# Counts the number of ticks in the music.  (Ticks = 16th notes, unless you
+# change that setting.)
+class CountingNoteAdder(object):
+    def __init__(self):
+        self.maxLen = 0
+
+    def handle(self, time, pitch, dur):
+        self.maxLen = max(self.maxLen, time + dur)
+
+class LegatoNoteAdder(object):
+    def __init__(self, maxLen, transpose=0):
+        self.maxLen = maxLen
+        self.mtx = np.zeros([88, maxLen])
+        self.transpose = transpose
+
+    def handle(self, time, pitch, dur):
+        if time != int(time):
+            return
+        rounded_dur = math.ceil(dur)
+        if time + rounded_dur >= self.maxLen:
+            return
+        self.mtx[pitch + self.transpose, time:time+rounded_dur] = 1
 
 def pitchGetter(letter, octave, offset):
     basePitch = {
@@ -107,16 +121,18 @@ def pitchGetter(letter, octave, offset):
     }
     return octave * 12 + offset + basePitch[letter]
 
-def fileToData(path):
-    _, length = read(path, None)
-    length = int(length / 16) + 1    # Length in measures
-    outMtx = np.zeros([88, length*16])
-    outMtx, _ = read(path, outMtx)
-    print length
+def fileToData(path, transpose=0):
+    counter = CountingNoteAdder()
+    read(path, counter.handle)
+    maxLen = int(math.ceil(counter.maxLen / 16) * 16)
+    print maxLen
+    noteMaker = LegatoNoteAdder(maxLen, transpose)
+    read(path, noteMaker.handle)
+    outMtx = noteMaker.mtx
 
     print "Writing outputs"
     windowSize = 4
-    nWindows = length - windowSize + 1
+    nWindows = maxLen / 16 - windowSize
     finalData = np.zeros([nWindows, 88*16*windowSize])
     for i in range(nWindows):
         thisSlice = outMtx[:, i*16:i*16+windowSize*16]
@@ -190,13 +206,14 @@ def main():
 
     total = None
     for f in joplin:
-        thisData = fileToData(f)
-        if total is None:
-            total = thisData
-        else:
-            total = np.concatenate((total, thisData), axis=0)
+        for transpose in range(-6, 6):
+            thisData = fileToData(f, transpose)
+            if total is None:
+                total = thisData
+            else:
+                total = np.concatenate((total, thisData), axis=0)
     print total.shape
-    cPickle.dump(total, open('joplin_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+    # cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
