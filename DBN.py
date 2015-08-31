@@ -164,6 +164,11 @@ class AutoencodingDBN(object):
 
         # The fine-tune cost is the reconstruction error of the entire net.
         self.finetune_cost = ((self.x - self.reverse_layers[0].output)**2).sum()
+
+        # The cost for training the generative net - in this case, self.x is
+        # completely disconnected, and we feed a pattern into the reverse net.
+        self.generative_cost = ((self.x - self.isolated_reverse[0].output)**2).sum()
+
         # The l1 cost is for generating constrained samples of the input.  (Aka
         # harmonizing a melody.)  Given a melody in self.x and a mask
         # self.x_mask of which parts of self.x actually matter, it computes the
@@ -291,6 +296,53 @@ class AutoencodingDBN(object):
 
         return train_fn, test_score
 
+
+    def build_generative_finetune_fns(self, train_set_outputs, train_set_labels,
+                                      batch_size, learning_rate):
+        index = T.lscalar('index')  # index to a [mini]batch
+        n_batches = train_set_outputs.get_value(borrow=True).shape[0] / batch_size
+
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.generative_cost, self.params)
+
+        # compute list of fine-tuning updates
+        updates = []
+        for param, gparam in zip(self.params, gparams):
+            updates.append((param, param - gparam * learning_rate))
+
+        train_fn = theano.function(
+            inputs=[index],
+            outputs=self.generative_cost,
+            updates=updates,
+            givens={
+                self.x: train_set_outputs[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+                self.isolated_reverse[-1].input: train_set_labels[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+            }
+        )
+
+        test_score_i = theano.function(
+            [index],
+            self.generative_cost,
+            givens={
+                self.x: train_set_outputs[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+                self.isolated_reverse[-1].input: train_set_labels[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+            }
+        )
+
+        # Create a function that scans the entire test set
+        def test_score():
+            return [test_score_i(i) for i in xrange(n_batches)]
+
+        return train_fn, test_score
+
     def generate(self, top_level):
         """
         Make a new piano roll, given top level values.  (Uses the backwards
@@ -350,7 +402,7 @@ class AutoencodingDBN(object):
         print '... pre-training the model'
         start_time = time.clock()
         ## Pre-train layer-wise
-        for i in xrange(self.n_layers):
+        for i in xrange(self.n_layers - 1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
@@ -376,12 +428,25 @@ class AutoencodingDBN(object):
         ########################
 
         # get the training, validation and testing function for the model
+
         print '... getting the finetuning functions'
-        train_fn, test_model = self.build_finetune_functions(
-            train_set_x=train_set_x,
-            batch_size=batch_size,
-            learning_rate=finetune_lr
-        )
+        use_autoencoder = False
+        if use_autoencoder:
+            train_fn, test_model = self.build_finetune_functions(
+                train_set_x=train_set_x,
+                batch_size=batch_size,
+                learning_rate=finetune_lr
+            )
+        else:
+            labels = numpy.random.randint(2,
+                size=[train_set_x.shape[0], self.layer_sizes[-1]])\
+                .astype(dtype=numpy.float64)
+           train_fn, test_model = self.build_generative_finetune_fns(
+                train_set_outputs=train_set_x,
+                train_set_labels=labels
+                batch_size=batch_size,
+                learning_rate=finetune_lr 
+            )
 
         print '... finetuning the model'
         # early-stopping parameters
@@ -580,7 +645,9 @@ if __name__ == '__main__':
     dbn = load_from_dump('./joplin-model.pickle')
     import sys
     if sys.argv[1] == 'sample':
-        dbn.sample()
+        dbn.sample(threshold=0.5)
     elif sys.argv[1] == 'harmonize': 
         dbn.label_from_file(path.dirname(sys.argv[0]), './ode_to_joy.xml',
             0.01, 500, 0.4)
+    else:
+        print "invalid command"
