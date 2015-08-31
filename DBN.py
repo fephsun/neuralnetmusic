@@ -26,19 +26,14 @@ from midi.utils import midiwrite
 theano.config.compute_test_value = 'off' # Use 'warn' to activate this feature
 
 # start-snippet-1
-class DBN(object):
-    """Deep Belief Network
-
-    A deep belief network is obtained by stacking several RBMs on top of each
-    other. The hidden layer of the RBM at layer `i` becomes the input of the
-    RBM at layer `i+1`. The first layer RBM gets as input the input of the
-    network, and the hidden layer of the last RBM represents the output. When
-    used for classification, the DBN is treated as a MLP, by adding a logistic
-    regression layer on top.
+class AutoencodingDBN(object):
+    """
+    An autoencoding Deep Belief Network, based on the classifying DBN in the
+    Theano tutorial.  (Most of the code is copied over.)
     """
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
-                 hidden_layers_sizes=[1000, 1000, 1000], n_outs=10):
+                 hidden_layers_sizes=[1000, 1000, 1000]):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -64,6 +59,7 @@ class DBN(object):
         self.rbm_layers = []
         self.params = []
         self.n_layers = len(hidden_layers_sizes)
+        self.layer_sizes = hidden_layers_sizes
 
         assert self.n_layers > 0
 
@@ -125,8 +121,13 @@ class DBN(object):
             self.rbm_layers.append(rbm_layer)
             self.params.extend(rbm_layer.params)
 
-        # And build the upside-down network.  This shares parameters with the forward network.
-        # Except the weights are transposed and stuff.
+        # And build the upside-down network.  This shares parameters with the
+        # forward network. Except the weights are transposed and stuff.
+
+        # The "isolated" layers let you run only the upside-down part of the
+        # network, for generation.  The non-isolated layers are connected to
+        # the forward, compressing part of the network, and are used for
+        # training.
         reverse_input = self.sigmoid_layers[-1].output
         self.isolated_reverse_input = theano.shared(
             numpy.zeros([10, hidden_layers_sizes[-1]]))
@@ -163,23 +164,23 @@ class DBN(object):
 
         # The fine-tune cost is the reconstruction error of the entire net.
         self.finetune_cost = ((self.x - self.reverse_layers[0].output)**2).sum()
-        # # Cost of labelling the first layer, assuming partial information.
-        # self.fake_first_layer = HiddenLayer(rng=numpy_rng,
-        #     input=self.fake_intermediate,
-        #     n_in=hidden_layers_sizes[0],
-        #     n_out=n_ins,
-        #     W=self.reverse_layers[0].W,
-        #     b=self.reverse_layers[0].b,
-        #     activation=T.nnet.sigmoid
-        # )
+
+        # The cost for training the generative net - in this case, self.x is
+        # completely disconnected, and we feed a pattern into the reverse net.
+        self.generative_cost = ((self.x - self.isolated_reverse[0].output)**2).sum()
+
+        # The l1 cost is for generating constrained samples of the input.  (Aka
+        # harmonizing a melody.)  Given a melody in self.x and a mask
+        # self.x_mask of which parts of self.x actually matter, it computes the
+        # error between the generated sample and the melody.
         self.l1_cost = (((self.x - self.isolated_reverse[0].output) * self.x_mask)**2).sum()
 
     def dump_params(self, outLoc):
         """
         Takes all of the weights, and stores them as numpy arrays.
         This is so the params are portable between GPU machines and CPU machines.
-        To load the params, you need to call load_params from a DBN instance
-        with the same size.
+        To load the params, you need to call load_from_dump, which re-makes your
+        DBN.
         """
         dump = {}
         for layer in range(self.n_layers):
@@ -187,13 +188,6 @@ class DBN(object):
             dump[(layer, 1)] = numpy.array(self.sigmoid_layers[layer].b.get_value())
             dump[(layer, 2)] = numpy.array(self.reverse_layers[layer].b.get_value())
         cPickle.dump(dump, open(outLoc, 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
-
-    def load_params(self, inLoc):
-        dump = cPickle.load(open(inLoc, 'rb'))
-        for layer in range(self.n_layers):
-            self.sigmoid_layers[layer].W.set_value(dump[(layer, 0)])
-            self.sigmoid_layers[layer].b.set_value(dump[(layer, 1)])
-            self.reverse_layers[layer].b.set_value(dump[(layer, 2)])
 
     def pretraining_functions(self, train_set_x, batch_size, k):
         '''Generates a list of functions, for performing one step of
@@ -302,9 +296,63 @@ class DBN(object):
 
         return train_fn, test_score
 
+
+    def build_generative_finetune_fns(self, train_set_outputs, train_set_labels,
+                                      batch_size, learning_rate):
+        index = T.lscalar('index')  # index to a [mini]batch
+        n_batches = train_set_outputs.get_value(borrow=True).shape[0] / batch_size
+
+        # compute the gradients with respect to the model parameters
+        # First, only one of the RBM biases is actually a parameter of the
+        # generative model, so we have to fix that.
+        gen_params = []
+        for i in range(self.n_layers):
+            gen_params.append(self.rbm_layers[i].vbias)
+            gen_params.append(self.rbm_layers[i].W)
+        gparams = T.grad(self.generative_cost, gen_params)
+
+        # compute list of fine-tuning updates
+        updates = []
+        for param, gparam in zip(gen_params, gparams):
+            updates.append((param, param - gparam * learning_rate))
+
+        train_fn = theano.function(
+            inputs=[index],
+            outputs=self.generative_cost,
+            updates=updates,
+            givens={
+                self.x: train_set_outputs[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+                self.isolated_reverse[-1].input: train_set_labels[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+            }
+        )
+
+        test_score_i = theano.function(
+            [index],
+            self.generative_cost,
+            givens={
+                self.x: train_set_outputs[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+                self.isolated_reverse[-1].input: train_set_labels[
+                    index * batch_size: (index + 1) * batch_size
+                ],
+            }
+        )
+
+        # Create a function that scans the entire test set
+        def test_score():
+            return [test_score_i(i) for i in xrange(n_batches)]
+
+        return train_fn, test_score
+
     def generate(self, top_level):
         """
-        Make a new piano roll, given top level values.
+        Make a new piano roll, given top level values.  (Uses the backwards
+        section of the network to make a sample.)
         """
         generator = theano.function(
             [],
@@ -336,33 +384,23 @@ class DBN(object):
         )
         return train_fn
 
+    def train_dbn(self, data_file, finetune_lr=0.01, pretraining_epochs=100,
+        pretrain_lr=0.05, k=1, training_epochs=1000, batch_size=10):
 
-def train_dbn(finetune_lr=0.001, pretraining_epochs=100,
-    pretrain_lr=0.01, k=1, training_epochs=1000,
-    batch_size=10):
+        raw_x = cPickle.load(open(data_file, 'rb')).astype(dtype=numpy.float32)
+        train_set_x = theano.shared(raw_x)
+        
 
-    raw_x = cPickle.load(open('bach_data.pickle', 'rb')).astype(numpy.float32)
-    train_set_x = theano.shared(raw_x)
-    
-
-    # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-    print n_train_batches
-
-    # numpy random generator
-    numpy_rng = numpy.random.RandomState()
-    print '... building the model'
-    if False:
-        # construct the Deep Belief Network
-        dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-                  hidden_layers_sizes=[1024, 256, 64, 16])
+        # compute number of minibatches for training, validation and testing
+        n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+        print n_train_batches
 
         # start-snippet-2
         #########################
         # PRETRAINING THE MODEL #
         #########################
         print '... getting the pretraining functions'
-        pretraining_fns = dbn.pretraining_functions(train_set_x=train_set_x,
+        pretraining_fns = self.pretraining_functions(train_set_x=train_set_x,
                                                     batch_size=batch_size,
                                                     k=k)
 
@@ -370,7 +408,7 @@ def train_dbn(finetune_lr=0.001, pretraining_epochs=100,
         print '... pre-training the model'
         start_time = time.clock()
         ## Pre-train layer-wise
-        for i in xrange(dbn.n_layers):
+        for i in xrange(self.n_layers - 1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
@@ -386,99 +424,184 @@ def train_dbn(finetune_lr=0.001, pretraining_epochs=100,
         print >> sys.stderr, ('The pretraining code for file ' +
                               os.path.split(__file__)[1] +
                               ' ran for %.2fm' % ((end_time - start_time) / 60.))
-        cPickle.dump(dbn, open('initial-model.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
-    else:
-        dbn = cPickle.load(open('initial-model.pickle', 'rb'))
-        # dbn = DBN(numpy_rng=numpy_rng, n_ins=raw_x.shape[1],
-        #           hidden_layers_sizes=[10, 2])
-    ########################
-    # FINETUNING THE MODEL #
-    ########################
 
-    # get the training, validation and testing function for the model
-    print '... getting the finetuning functions'
-    train_fn, test_model = dbn.build_finetune_functions(
-        train_set_x=train_set_x,
-        batch_size=batch_size,
-        learning_rate=finetune_lr
-    )
+        # If you'd like to try out different parameters for the fine-tuner only,
+        # you can cache the initial model state, so you don't have to pre-train
+        # every time.
+        cPickle.dump(self, open('initial-model.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+        ########################
+        # FINETUNING THE MODEL #
+        ########################
 
-    print '... finetuning the model'
-    # early-stopping parameters
-    patience = 4 * n_train_batches  # look as this many examples regardless
-    patience_increase = 4.    # wait this much longer when a new best is
-                              # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
-                                   # considered significant
-    validation_frequency = min(n_train_batches, patience / 2)
-                                  # go through this many
-                                  # minibatches before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
+        # get the training, validation and testing function for the model
 
-    best_validation_loss = numpy.inf
-    test_score = 0.
-    start_time = time.clock()
+        print '... getting the finetuning functions'
+        use_autoencoder = False
+        if use_autoencoder:
+            train_fn, test_model = self.build_finetune_functions(
+                train_set_x=train_set_x,
+                batch_size=batch_size,
+                learning_rate=finetune_lr
+            )
+        else:
+            raw_labels = numpy.random.randint(2,
+                size=[raw_x.shape[0], self.layer_sizes[-1]])\
+                .astype(dtype=numpy.float64)
+            labels = theano.shared(raw_labels)
+            train_fn, test_model = self.build_generative_finetune_fns(
+                train_set_outputs=train_set_x,
+                train_set_labels=labels,
+                batch_size=batch_size,
+                learning_rate=finetune_lr 
+            )
 
-    done_looping = False
-    epoch = 0
+        print '... finetuning the model'
+        # early-stopping parameters
+        patience = 4 * n_train_batches  # look as this many examples regardless
+        patience_increase = 2.    # wait this much longer when a new best is
+                                  # found
+        improvement_threshold = 0.995  # a relative improvement of this much is
+                                       # considered significant
+        validation_frequency = min(n_train_batches, patience / 2)
+                                      # go through this many
+                                      # minibatches before checking the network
+                                      # on the validation set; in this case we
+                                      # check every epoch
 
-    while (epoch < training_epochs) and (not done_looping):
-        epoch = epoch + 1
-        for minibatch_index in xrange(n_train_batches):
+        best_validation_loss = numpy.inf
+        test_score = 0.
+        start_time = time.clock()
 
-            minibatch_avg_cost = train_fn(minibatch_index)
-            iter = (epoch - 1) * n_train_batches + minibatch_index
+        done_looping = False
+        epoch = 0
 
-            if (iter + 1) % validation_frequency == 0:
+        while (epoch < training_epochs) and (not done_looping):
+            epoch = epoch + 1
+            for minibatch_index in xrange(n_train_batches):
 
-                validation_losses = test_model()
-                this_validation_loss = numpy.mean(validation_losses)
-                print(
-                    'epoch %i, minibatch %i/%i, validation error %f %%'
-                    % (
-                        epoch,
-                        minibatch_index + 1,
-                        n_train_batches,
-                        this_validation_loss * 100.
+                minibatch_avg_cost = train_fn(minibatch_index)
+                iter = (epoch - 1) * n_train_batches + minibatch_index
+
+                if (iter + 1) % validation_frequency == 0:
+
+                    validation_losses = test_model()
+                    this_validation_loss = numpy.mean(validation_losses)
+                    print(
+                        'epoch %i, minibatch %i/%i, validation error %f %%'
+                        % (
+                            epoch,
+                            minibatch_index + 1,
+                            n_train_batches,
+                            this_validation_loss * 100.
+                        )
                     )
-                )
 
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
+                    # if we got the best validation score until now
+                    if this_validation_loss < best_validation_loss:
 
-                    #improve patience if loss improvement is good enough
-                    if (
-                        this_validation_loss < best_validation_loss *
-                        improvement_threshold
-                    ):
-                        patience = max(patience, iter * patience_increase)
+                        #improve patience if loss improvement is good enough
+                        if (
+                            this_validation_loss < best_validation_loss *
+                            improvement_threshold
+                        ):
+                            patience = max(patience, iter * patience_increase)
 
-                    # save best validation score and iteration number
-                    best_validation_loss = this_validation_loss
-                    best_iter = iter
+                        # save best validation score and iteration number
+                        best_validation_loss = this_validation_loss
+                        best_iter = iter
 
-            if patience <= iter:
-                done_looping = True
-                break
+                if patience <= iter:
+                    done_looping = True
+                    break
 
-    end_time = time.clock()
-    print(
-        (
-            'Optimization complete with best validation score of %f, '
-            'obtained at iteration %i, '
-        ) % (best_validation_loss, best_iter + 1)
-    )
-    print >> sys.stderr, ('The fine tuning code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time)
-                                              / 60.))
+        end_time = time.clock()
+        print(
+            (
+                'Optimization complete with best validation score of %f, '
+                'obtained at iteration %i, '
+            ) % (best_validation_loss, best_iter + 1)
+        )
+        print >> sys.stderr, ('The fine tuning code for file ' +
+                              os.path.split(__file__)[1] +
+                              ' ran for %.2fm' % ((end_time - start_time)
+                                                  / 60.))
+        self.dump_params('./my-model.pickle')
 
-    dbn.dump_params('bach-model-16.pickle')
+    def sample(self, top_level=None, rootLoc='./', save=True, threshold=0.5):
+        """
+        Generates a sample from the trained neural net.  top_level is a 10 x
+        [size of top layer] matrix whose rows contain values for the top
+        layer.  Most of the time, I only use the first row, but you can only
+        process data in increments of batch_size.
+        """
+        if top_level is None:
+            top_level_size = self.layer_sizes[-1]
+            top_level = numpy.random.randint(2, size=[10, top_level_size])\
+                .astype(dtype=numpy.float32)
+        output = self.generate(top_level)
+        output = output.reshape([10, 88*64])
+        firstIm = output[0, :].reshape([88, 64])
+        # Makes a little picture of the piano roll.
+        outIm = Image.fromarray((firstIm*255).astype('uint8'))
+        outIm.save(path.join(rootLoc, 'test.png'))
+        if threshold is not None:
+            firstIm[firstIm > threshold] = 1
+            firstIm[firstIm <= threshold] = 0
+        if save:
+            midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
+        return firstIm
+
+    def label_from_file(self, rootLoc, fileLoc, learn_rate, n_iters, threshold):
+        """
+        Given a xml file at fileLoc, harmonizes the melody in the xml file, by
+        doing gradient descent on the top hidden layer of the network.  This
+        gives us an estimate of the top layer activations that might generate
+        the melody. We then run the network forwards to get the entire harmony
+        from the top level activations that we estimate.
+        """
+        noteReader = myparser.LegatoNoteAdder(64)
+        myparser.read(fileLoc, noteReader.handle)
+        snippet = noteReader.mtx
+        mask = melody_blocker(snippet)
+
+        linear_snippet = snippet.reshape([88*64])
+        linear_mask = mask.reshape([88*64])
+        in_data = numpy.zeros([10, 88*64])
+        x_mask = numpy.zeros([10, 88*64])
+        for i in range(10):
+            in_data[i, :] = linear_snippet
+            x_mask[i, :] = linear_mask
+
+
+        # Do gradient descent to estimate the activations on layer 1.
+        new_vals = theano.shared(
+            value=numpy.random.sample([10, self.layer_sizes[-1]]),
+        )
+        f = theano.function(
+            inputs=[],
+            updates=[(self.isolated_reverse_input, new_vals)],
+        )
+        f()
+        trainer = self.label(in_data, x_mask, learn_rate)
+        for i in range(n_iters):
+            print trainer()
+
+        # Then, generate using it.
+        result = dbn.sample(self.isolated_reverse_input, rootLoc=rootLoc, save=False,
+            threshold=threshold)
+        # Add the melody back onto the snippet.
+        final = result * (1.0 - mask)
+        final = final + snippet
+        final[final > 0.5] = 1
+        midiwrite(path.join(rootLoc, 'test.midi'), final.T, r=(12, 109), dt=64)
+        return final
 
 def melody_blocker(snippet):
     """
-    Makes a mask where anything above the top line of the snippet is 1.
+    Makes a mask where anything above the top line of the snippet is 1.  Also
+    enforces empty space a major 2nd above and below the melody.  (This means
+    the optimizer will consider any note above the top line of the melody, or
+    too close to the melody, wrong.)
     """
     envelope = numpy.copy(snippet)
     _, length = snippet.shape
@@ -492,78 +615,46 @@ def melody_blocker(snippet):
             envelope[pitch-2:pitch+3, i] = 1
     return envelope
 
-def generate(top_level=None, rootLoc='./', save=True, threshold=0.5):
-    dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-                  hidden_layers_sizes=[1024, 256, 64, 16])
-    dbn.load_params(path.join(rootLoc, 'joplin-model.pickle'))
-
-    # top_level = numpy.random.randint(2, size=[10, 64]).astype(dtype=numpy.float64)
-    # top_level = theano.shared(top_level)
-    if top_level is None:
-        top_level = numpy.random.randint(2, size=[10, 16]).astype(dtype=numpy.float64)
-    output = dbn.generate(top_level)
-    output = output.reshape([10, 88*64])
-    firstIm = output[0, :].reshape([88, 64])
-    outIm = Image.fromarray((firstIm*255).astype('uint8'))
-    outIm.save(path.join(rootLoc, 'test.png'))
-    if threshold is not None:
-        firstIm[firstIm > threshold] = 1
-        firstIm[firstIm <= threshold] = 0
-    if save:
-        midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
-    return firstIm
-
-def label(rootLoc, fileLoc, learn_rate, n_iters, threshold):
-    dbn = DBN(numpy_rng=numpy.random.RandomState(), n_ins=88*64,
-              hidden_layers_sizes=[1024, 256, 64, 16])
-    dbn.load_params(path.join(rootLoc, 'joplin-model.pickle'))
-
-    snippet = numpy.zeros([88, 64])
-    myparser.read(fileLoc, snippet, speed=2.0)
-    # snippet_range = make_envelope(snippet)
-    snippet_range = melody_blocker(snippet)
-    linear_snippet = snippet.reshape([88*64])
-    linear_snippet_range = snippet_range.reshape([88*64])
-    in_data = numpy.zeros([10, 88*64])
-    x_mask = numpy.zeros([10, 88*64])
-    for i in range(10):
-        in_data[i, :] = linear_snippet
-        x_mask[i, :] = linear_snippet_range
-
-
-    # Do gradient descent to estimate the activations on layer 1.
-    new_vals = theano.shared(
-        value=numpy.random.sample([10, 64]),
-    )
-    f = theano.function(
-        inputs=[],
-        updates=[(dbn.isolated_reverse_input, new_vals)],
-    )
-    f()
-    trainer = dbn.label(in_data, x_mask, learn_rate)
-    for i in range(n_iters):
-        print trainer()
-
-    # Then, generate using it.
-    result = generate(dbn.isolated_reverse_input, rootLoc=rootLoc, save=False,
-        threshold=threshold)
-    # This is really hacky - if there is no threshold, just return the
-    # result, don't try to make music.
-    if threshold is None:
-        result = result + snippet
-        result[result > 1] = 1
-        return result
-    final = result * (1.0 - snippet_range)
-
-    final[final > 0.5] = 1
-    midiwrite(path.join(rootLoc, 'test.midi'), final.T, r=(12, 109), dt=64)
-    return final
+def load_from_dump(inLoc):
+    """
+    Loads data from dumped state (generated by dumped_params), and creates a
+    new DBN.
+    """
+    dump = cPickle.load(open(inLoc, 'rb'))
+    # Get the number of layers.
+    max_layer = 0
+    for layer, _ in dump:
+        if layer > max_layer:
+            max_layer = layer
+    max_layer += 1
+    # Get the size of each layer.
+    layer_sizes = []
+    for layer in range(max_layer):
+        layer_sizes.append(len(dump[(layer, 1)]))
+    # For now, the size of the input is fixed at 88x64, but you can read that
+    # out of the dump, as well.
+    dbn = AutoencodingDBN(numpy_rng=numpy.random.RandomState(),
+        n_ins=88*64,
+        hidden_layers_sizes=layer_sizes)
+    for layer in range(max_layer):
+        dbn.sigmoid_layers[layer].W.set_value(dump[(layer, 0)])
+        dbn.sigmoid_layers[layer].b.set_value(dump[(layer, 1)])
+        dbn.reverse_layers[layer].b.set_value(dump[(layer, 2)])
+    return dbn
 
 if __name__ == '__main__':
-    train_dbn()
-    # import sys
-    # if sys.argv[1] == 'gen':
-    #     generate()
-    # else:
-    #     label(path.dirname(sys.argv[0]), sys.argv[1], float(sys.argv[2]),
-    #         int(sys.argv[3]), float(sys.argv[4]))
+    if sys.argv[1] == 'train':
+        dbn = AutoencodingDBN(numpy_rng=numpy.random.RandomState(),
+            n_ins=88*64,
+            hidden_layers_sizes=[1024, 256, 64])
+        dbn.train_dbn('./joplin-data.pickle')
+        exit()
+    dbn = load_from_dump('./joplin-model.pickle')
+    import sys
+    if sys.argv[1] == 'sample':
+        dbn.sample(threshold=0.5)
+    elif sys.argv[1] == 'harmonize': 
+        dbn.label_from_file(path.dirname(sys.argv[0]), './ode_to_joy.xml',
+            0.01, 500, 0.4)
+    else:
+        print "invalid command"
