@@ -25,6 +25,10 @@ from midi.utils import midiwrite
 # compute_test_value is 'off' by default, meaning this feature is inactive
 theano.config.compute_test_value = 'off' # Use 'warn' to activate this feature
 
+# For switching between 32 and 64 bit systems, because Theano is a little silly
+# like that.
+NUMPY_DTYPE = numpy.float64
+
 # start-snippet-1
 class AutoencodingDBN(object):
     """
@@ -387,7 +391,7 @@ class AutoencodingDBN(object):
     def train_dbn(self, data_file, finetune_lr=0.01, pretraining_epochs=100,
         pretrain_lr=0.05, k=1, training_epochs=1000, batch_size=10):
 
-        raw_x = cPickle.load(open(data_file, 'rb')).astype(dtype=numpy.float32)
+        raw_x = cPickle.load(open(data_file, 'rb')).astype(dtype=NUMPY_DTYPE)
         train_set_x = theano.shared(raw_x)
         
 
@@ -537,7 +541,7 @@ class AutoencodingDBN(object):
         if top_level is None:
             top_level_size = self.layer_sizes[-1]
             top_level = numpy.random.randint(2, size=[10, top_level_size])\
-                .astype(dtype=numpy.float32)
+                .astype(dtype=NUMPY_DTYPE)
         output = self.generate(top_level)
         output = output.reshape([10, 88*64])
         firstIm = output[0, :].reshape([88, 64])
@@ -649,10 +653,10 @@ if __name__ == '__main__':
             hidden_layers_sizes=[1024, 256, 64])
         dbn.train_dbn('./joplin-data.pickle')
         exit()
-    dbn = load_from_dump('./joplin-model.pickle')
+    dbn = load_from_dump('./joplin-model-gen.pickle')
     import sys
     if sys.argv[1] == 'sample':
-        dbn.sample(threshold=0.5)
+        dbn.sample(threshold=0.3)
     elif sys.argv[1] == 'harmonize': 
         dbn.label_from_file(path.dirname(sys.argv[0]), './ode_to_joy.xml',
             0.01, 500, 0.4)
