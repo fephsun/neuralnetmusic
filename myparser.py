@@ -143,55 +143,6 @@ def fileToData(path, transpose=0):
     return finalData
 
 def main():
-    chorales = [
-        './chorales/0408.xml',
-        './chorales/0507.xml',
-        './chorales/0707.xml',
-        './chorales/0806.xml',
-        './chorales/0907.xml',
-        './chorales/1007.xml',
-        './chorales/1207.xml',
-        './chorales/1306.xml',
-        './chorales/1405.xml',
-        './chorales/1606.xml',
-        './chorales/1805.xml',
-        './chorales/2007.xml',
-        './chorales/2506.xml',
-        './chorales/2606.xml',
-        './chorales/2806.xml',
-        './chorales/3006.xml',
-        './chorales/3706.xml',
-        './chorales/3907.xml',
-        './chorales/4003.xml',
-        './chorales/4006.xml',
-        './chorales/4008.xml',
-        './chorales/4207.xml',
-        './chorales/4407.xml',
-        './chorales/4507.xml',
-        './chorales/4803.xml',
-        './chorales/4807.xml',
-        './chorales/5505.xml',
-        './chorales/5605.xml',
-        './chorales/6005.xml',
-        './chorales/6206.xml',
-        './chorales/6408.xml',
-        './chorales/6507.xml',
-        './chorales/6707.xml',
-        './chorales/7206.xml',
-        './chorales/7305.xml',
-        './chorales/7706.xml',
-        './chorales/8107.xml',
-        './chorales/9906.xml',
-        './chorales/10406.xml',
-        './chorales/12406.xml',
-        './chorales/13306.xml',
-        './chorales/14007.xml',
-        './chorales/14406.xml',
-        './chorales/30200.xml',
-        './chorales/34000.xml',
-        './chorales/40100.xml',
-    ]
-
     joplin = [
         './joplin/searchlight.xml',
         './joplin/strenous.xml',
@@ -206,14 +157,17 @@ def main():
 
     total = None
     for f in joplin:
-        for transpose in range(-6, 6):
+        # You can transpose all the music to multiple keys, to increase the amount
+        # of training data.  But, this makes training much slower and harder.  (Right
+        # now, everything is in C major.)
+        for transpose in range(1):
             thisData = fileToData(f, transpose)
             if total is None:
                 total = thisData
             else:
                 total = np.concatenate((total, thisData), axis=0)
     print total.shape
-    # cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+    cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
