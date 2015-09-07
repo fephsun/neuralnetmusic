@@ -653,7 +653,7 @@ if __name__ == '__main__':
             hidden_layers_sizes=[1024, 256, 64])
         dbn.train_dbn('./joplin-data.pickle')
         exit()
-    dbn = load_from_dump('./joplin-model-gen.pickle')
+    dbn = load_from_dump('./joplin-model.pickle')
     import sys
     if sys.argv[1] == 'sample':
         dbn.sample(threshold=0.3)
