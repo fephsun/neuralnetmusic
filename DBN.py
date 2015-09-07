@@ -531,7 +531,8 @@ class AutoencodingDBN(object):
                                                   / 60.))
         self.dump_params('./my-model.pickle')
 
-    def sample(self, top_level=None, rootLoc='./', save=True, threshold=0.5):
+    def sample(self, top_level=None, rootLoc='./', save=True, threshold=0.5,
+            filename='test.midi'):
         """
         Generates a sample from the trained neural net.  top_level is a 10 x
         [size of top layer] matrix whose rows contain values for the top
@@ -552,7 +553,7 @@ class AutoencodingDBN(object):
             firstIm[firstIm > threshold] = 1
             firstIm[firstIm <= threshold] = 0
         if save:
-            midiwrite('test.midi', firstIm.T, r=(12, 109), dt=64)
+            midiwrite(path.join(rootLoc, filename), firstIm.T, r=(12, 109), dt=64)
         return firstIm
 
     def label_from_file(self, rootLoc, fileLoc, learn_rate, n_iters, threshold):
@@ -656,9 +657,9 @@ if __name__ == '__main__':
     dbn = load_from_dump('./joplin-model.pickle')
     import sys
     if sys.argv[1] == 'sample':
-        dbn.sample(threshold=0.3)
+        dbn.sample(threshold=0.5)
     elif sys.argv[1] == 'harmonize': 
-        dbn.label_from_file(path.dirname(sys.argv[0]), './ode_to_joy.xml',
+        dbn.label_from_file(path.dirname(sys.argv[0]), './12-days.xml',
             0.01, 500, 0.4)
     else:
         print "invalid command"
