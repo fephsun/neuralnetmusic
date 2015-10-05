@@ -1,8 +1,10 @@
 import xml.etree.ElementTree as ET
 import math
 import numpy as np
+import subprocess
 from PIL import Image
 import cPickle
+import cStringIO
 
 def read(filename, noteAdder, speed=1.0):
     # speed controls how much to expand or contract the piano roll.
@@ -121,7 +123,7 @@ def pitchGetter(letter, octave, offset):
     }
     return octave * 12 + offset + basePitch[letter]
 
-def fileToData(path, transpose=0):
+def fileToData(path, transpose=0, windowSize=4):
     counter = CountingNoteAdder()
     read(path, counter.handle)
     maxLen = int(math.ceil(counter.maxLen / 16) * 16)
@@ -131,7 +133,6 @@ def fileToData(path, transpose=0):
     outMtx = noteMaker.mtx
 
     print "Writing outputs"
-    windowSize = 4
     nWindows = maxLen / 16 - windowSize
     finalData = np.zeros([nWindows, 88*16*windowSize])
     for i in range(nWindows):
@@ -141,6 +142,15 @@ def fileToData(path, transpose=0):
             outIm = Image.fromarray(thisSlice.astype('uint8')*255)
             outIm.save('test.png')
     return finalData
+
+def fileToSerialData(path):
+    counter = CountingNoteAdder()
+    read(path, counter.handle)
+    maxLen = int(math.ceil(counter.maxLen / 64) * 64)
+    print maxLen
+    noteMaker = LegatoNoteAdder(maxLen, 0)
+    read(path, noteMaker.handle)
+    return noteMaker.mtx    
 
 def main():
     joplin = [
@@ -166,8 +176,51 @@ def main():
                 total = thisData
             else:
                 total = np.concatenate((total, thisData), axis=0)
-    print total.shape
+    print "Average notes per column:"
+    print np.sum(total) / total.shape[0] / 64
     cPickle.dump(total, open('test_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
 
+def make_kaldi(filename, offset):
+    joplin = [
+        './joplin/searchlight.xml',
+        './joplin/strenous.xml',
+        './joplin/maple_leaf.xml',
+        './joplin/entertainer.xml',
+        './joplin/syncopations.xml',
+        './joplin/cleopha.xml',
+        './joplin/winners.xml',
+        './joplin/winners_2.xml',
+        './joplin/alabama.xml',
+    ]
+    total = None
+    totalOut = ''
+    count_file = open(filename + '.counts', 'wb')
+    for f in joplin:
+        if offset > 0:
+            thisData = fileToSerialData(f)[:, :-offset]
+            thisData = np.concatenate((np.zeros((88, offset)), thisData), axis=1)
+        else:
+            thisData = fileToSerialData(f)
+        f_safe = ''.join(filter(str.isalnum, f))
+        count_file.write(f_safe + ' ' + str(thisData.shape[1]) + '\n')
+
+        stringio = cStringIO.StringIO()
+        np.savetxt(stringio, thisData.T, fmt='%.2f')
+        totalOut = totalOut + f_safe + ' [ ' + stringio.getvalue() + ' ]\n'
+    count_file.close()
+
+    outFile = open(filename + '.txt', 'wb')
+    outFile.write(totalOut)
+    outFile.close()
+
+    scpFile = open(filename + '.feats', 'wb')
+    scpFile.write('scp:{0}.scp\n'.format(filename))
+    scpFile.close()
+
+    subprocess.call('../kaldi/src/featbin/copy-feats --compress ' +
+        'ark:{0}.txt ark,scp:$PWD/{0}.ark,{0}.scp'
+        .format(filename), shell=True)
+
 if __name__ == '__main__':
+    # make_kaldi('in_feats', 0)
     main()
