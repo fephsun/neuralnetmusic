@@ -221,6 +221,23 @@ def make_kaldi(filename, offset):
         'ark:{0}.txt ark,scp:$PWD/{0}.ark,{0}.scp'
         .format(filename), shell=True)
 
+def make_keras():
+    data = {}
+    joplin = [
+        './joplin/searchlight.xml',
+        './joplin/strenous.xml',
+        './joplin/maple_leaf.xml',
+        './joplin/entertainer.xml',
+        './joplin/syncopations.xml',
+        './joplin/cleopha.xml',
+        './joplin/winners.xml',
+        './joplin/winners_2.xml',
+        './joplin/alabama.xml',
+    ]
+    for f in joplin:
+        data[f] = fileToSerialData(f)
+    cPickle.dump(data, open('keras_data.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+
 if __name__ == '__main__':
     # make_kaldi('in_feats', 0)
-    main()
+    make_keras()
