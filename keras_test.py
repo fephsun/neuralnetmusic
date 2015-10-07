@@ -1,26 +1,65 @@
 from keras.models import Sequential
+import keras.optimizers as optimizers
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.recurrent import LSTM
+
+from midi.utils import midiwrite
+
 import numpy as np
 import cPickle
 
-print 'loading data'
-data = cPickle.load(open('keras_data.pickle', 'rb'))
+def sample(model, length=64):
+	x = np.zeros((65, 88))
+	x = np.expand_dims(x, axis=0)
+	for step in range(length):
+		pred = model.predict(x[:, :step+1, :])
+		print pred[0]
+		x[0, step+1, :] = np.round(pred[0])
+	return x[0, 1:, :]
 
-print 'building model'
-model = Sequential()
-model.add(LSTM(88, 128, return_sequences=True))
-model.add(Dropout(0.2))
-model.add(LSTM(128, 88, return_sequences=False))
-model.add(Dropout(0.2))
+def ideal_predict(model, data):
+	inp = data[0, :, :]
+	inp = np.expand_dims(inp, axis=0)
+	out = model.predict(inp)
+	print out.shape
+	print np.max(out)
+	midiwrite('./test.midi', np.round(out[0, :, :]), r=(12, 109), dt=64)
 
-model.compile(loss='mse',
-	optimizer='rmsprop',
-	class_mode='binary',)
+def sample_and_save(model, length=64):
+	x = sample(model, length)
+	midiwrite('./test.midi', x, r=(12, 109), dt=64)
 
-for iteration in range(50):
-	print 'iteration ', iteration
-	for fname, notes in data.iteritems():
-		notes_input = np.expand_dims(notes.T, axis=0)
-		model.fit(notes_input, notes.T, batch_size=128, nb_epoch=1)
+def load_data():
+	all_data = cPickle.load(open('./joplin_data.pickle', 'rb'))
+	n_samples = all_data.shape[0]
+	three_d_data = np.zeros((n_samples, 64, 88))
+	for i in range(n_samples):
+		three_d_data[i, :, :] = all_data[i, :].reshape((88, 64)).T
+	return three_d_data
 
+def main():
+	data = load_data()
+	notes_input = np.concatenate((np.zeros((data.shape[0], 1, 88)), 
+		data[:, :-1, :]), axis=1)
+	notes_output = data
+
+	print 'building model'
+	model = Sequential()
+	N_HIDDEN = 256
+	model.add(LSTM(88, N_HIDDEN, return_sequences=True))
+	model.add(LSTM(N_HIDDEN, N_HIDDEN, return_sequences=True))
+	model.add(LSTM(N_HIDDEN, 88, return_sequences=True))
+
+	# optimizer = optimizers.SGD(lr=0.1)
+	optimizer = optimizers.RMSprop()
+	model.compile(loss='mse',
+		optimizer=optimizer,
+		class_mode='binary',)
+
+	for iteration in range(500):
+		print iteration
+		model.fit(notes_input, notes_output, batch_size=128, nb_epoch=10)
+		ideal_predict(model, data)
+
+if __name__ == '__main__':
+	main()
