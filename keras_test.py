@@ -45,7 +45,7 @@ def main():
 
 	print 'building model'
 	model = Sequential()
-	N_HIDDEN = 256
+	N_HIDDEN = 1024
 	model.add(LSTM(88, N_HIDDEN, return_sequences=True))
 	model.add(LSTM(N_HIDDEN, N_HIDDEN, return_sequences=True))
 	model.add(LSTM(N_HIDDEN, 88, return_sequences=True))
@@ -60,6 +60,10 @@ def main():
 		print iteration
 		model.fit(notes_input, notes_output, batch_size=128, nb_epoch=10)
 		ideal_predict(model, data)
+		if iteration % 10 == 0:
+			print "saving weights"
+			model.save_weights('D:/scratch/keras_model.hdf5', overwrite=True)
+			print "done saving weights"
 
 if __name__ == '__main__':
 	main()
