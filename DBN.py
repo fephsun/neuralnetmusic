@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 """
 import cPickle
@@ -5,7 +7,6 @@ import os
 import sys
 import time
 import os.path as path
-import copy
 
 import numpy
 
@@ -23,11 +24,12 @@ from midi.utils import midiwrite
 
 
 # compute_test_value is 'off' by default, meaning this feature is inactive
-theano.config.compute_test_value = 'off' # Use 'warn' to activate this feature
+theano.config.compute_test_value = 'off'  # Use 'warn' to activate this feature
 
 # For switching between 32 and 64 bit systems, because Theano is a little silly
 # like that.
 NUMPY_DTYPE = numpy.float64
+
 
 # start-snippet-1
 class AutoencodingDBN(object):
@@ -113,7 +115,6 @@ class AutoencodingDBN(object):
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
 
-
             # Construct an RBM that shared weights with this layer
             rbm_layer = RBM(numpy_rng=numpy_rng,
                             theano_rng=theano_rng,
@@ -138,60 +139,63 @@ class AutoencodingDBN(object):
         isolated_input = self.isolated_reverse_input
         self.reverse_layers = [None] * self.n_layers
         self.isolated_reverse = [None] * self.n_layers
-        for i in reversed(xrange(self.n_layers)):    
+        for i in reversed(xrange(self.n_layers)):
             if i == 0:
                 out_size = n_ins
             else:
                 out_size = hidden_layers_sizes[i-1]
             reverse_sigmoid = HiddenLayer(rng=numpy_rng,
-                input=reverse_input,
-                n_in=hidden_layers_sizes[i],
-                n_out=out_size,
-                W=self.sigmoid_layers[i].W.T,
-                b=self.rbm_layers[i].vbias,
-                activation=T.nnet.sigmoid
-            )
+                                          input=reverse_input,
+                                          n_in=hidden_layers_sizes[i],
+                                          n_out=out_size,
+                                          W=self.sigmoid_layers[i].W.T,
+                                          b=self.rbm_layers[i].vbias,
+                                          activation=T.nnet.sigmoid)
             isolated_sigmoid = HiddenLayer(rng=numpy_rng,
-                input=isolated_input,
-                n_in=hidden_layers_sizes[i],
-                n_out=out_size,
-                W=self.sigmoid_layers[i].W.T,
-                b=self.rbm_layers[i].vbias,
-                activation=T.nnet.sigmoid
-            )
-            
+                                           input=isolated_input,
+                                           n_in=hidden_layers_sizes[i],
+                                           n_out=out_size,
+                                           W=self.sigmoid_layers[i].W.T,
+                                           b=self.rbm_layers[i].vbias,
+                                           activation=T.nnet.sigmoid)
+
             reverse_input = reverse_sigmoid.output
             isolated_input = isolated_sigmoid.output
             self.reverse_layers[i] = reverse_sigmoid
             self.isolated_reverse[i] = isolated_sigmoid
 
-
         # The fine-tune cost is the reconstruction error of the entire net.
-        self.finetune_cost = ((self.x - self.reverse_layers[0].output)**2).sum()
+        self.finetune_cost = (((self.x - self.reverse_layers[0].output)**2)
+                              .sum())
 
         # The cost for training the generative net - in this case, self.x is
         # completely disconnected, and we feed a pattern into the reverse net.
-        self.generative_cost = ((self.x - self.isolated_reverse[0].output)**2).sum()
+        self.generative_cost = (((self.x - self.isolated_reverse[0].output)**2)
+                                .sum())
 
         # The l1 cost is for generating constrained samples of the input.  (Aka
         # harmonizing a melody.)  Given a melody in self.x and a mask
         # self.x_mask of which parts of self.x actually matter, it computes the
         # error between the generated sample and the melody.
-        self.l1_cost = (((self.x - self.isolated_reverse[0].output) * self.x_mask)**2).sum()
+        self.l1_cost = ((((self.x - self.isolated_reverse[0].output)
+                          * self.x_mask)**2).sum())
 
-    def dump_params(self, outLoc):
+    def dump_params(self, out_loc):
         """
-        Takes all of the weights, and stores them as numpy arrays.
-        This is so the params are portable between GPU machines and CPU machines.
-        To load the params, you need to call load_from_dump, which re-makes your
-        DBN.
+        Takes all of the weights, and stores them as numpy arrays. This is so
+        the params are portable between GPU machines and CPU machines. To load
+        the params, you need to call load_from_dump, which re-makes your DBN.
         """
         dump = {}
         for layer in range(self.n_layers):
-            dump[(layer, 0)] = numpy.array(self.sigmoid_layers[layer].W.get_value())
-            dump[(layer, 1)] = numpy.array(self.sigmoid_layers[layer].b.get_value())
-            dump[(layer, 2)] = numpy.array(self.reverse_layers[layer].b.get_value())
-        cPickle.dump(dump, open(outLoc, 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+            dump[(layer, 0)] = (numpy.array(self.sigmoid_layers[layer]
+                                            .W.get_value()))
+            dump[(layer, 1)] = (numpy.array(self.sigmoid_layers[layer]
+                                            .b.get_value()))
+            dump[(layer, 2)] = (numpy.array(self.reverse_layers[layer]
+                                            .b.get_value()))
+        with open(out_loc, 'wb') as picklefile:
+            cPickle.dump(dump, picklefile, protocol=cPickle.HIGHEST_PROTOCOL)
 
     def pretraining_functions(self, train_set_x, batch_size, k):
         '''Generates a list of functions, for performing one step of
@@ -213,8 +217,6 @@ class AutoencodingDBN(object):
         index = T.lscalar('index')  # index to a minibatch
         learning_rate = T.scalar('lr')  # learning rate to use
 
-        # number of batches
-        n_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
         # begining of a batch, given `index`
         batch_begin = index * batch_size
         # ending of a batch given `index`
@@ -300,11 +302,13 @@ class AutoencodingDBN(object):
 
         return train_fn, test_score
 
-
-    def build_generative_finetune_fns(self, train_set_outputs, train_set_labels,
+    def build_generative_finetune_fns(self,
+                                      train_set_outputs,
+                                      train_set_labels,
                                       batch_size, learning_rate):
         index = T.lscalar('index')  # index to a [mini]batch
-        n_batches = train_set_outputs.get_value(borrow=True).shape[0] / batch_size
+        n_batches = (train_set_outputs.get_value(borrow=True).shape[0] /
+                     batch_size)
 
         # compute the gradients with respect to the model parameters
         # First, only one of the RBM biases is actually a parameter of the
@@ -374,8 +378,8 @@ class AutoencodingDBN(object):
         """
         grad = T.grad(self.l1_cost, self.isolated_reverse_input)
         # compute list of fine-tuning updates
-        updates = (self.isolated_reverse_input, 
-            self.isolated_reverse_input - grad * learning_rate)
+        updates = (self.isolated_reverse_input,
+                   self.isolated_reverse_input - grad * learning_rate)
 
         train_fn = theano.function(
             inputs=[],
@@ -388,30 +392,35 @@ class AutoencodingDBN(object):
         )
         return train_fn
 
-    def train_dbn(self, data_file, finetune_lr=0.01, pretraining_epochs=100,
-        pretrain_lr=0.05, k=1, training_epochs=1000, batch_size=10):
+    def train_dbn(self,
+                  data_file,
+                  finetune_lr=0.01,
+                  pretraining_epochs=100,
+                  pretrain_lr=0.05,
+                  k=1,
+                  training_epochs=1000,
+                  batch_size=10):
 
         raw_x = cPickle.load(open(data_file, 'rb')).astype(dtype=NUMPY_DTYPE)
         train_set_x = theano.shared(raw_x)
-        
 
         # compute number of minibatches for training, validation and testing
-        n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-        print n_train_batches
+        n_train_batches = (train_set_x.get_value(borrow=True).shape[0]
+                           / batch_size)
+        print(n_train_batches)
 
         # start-snippet-2
         #########################
         # PRETRAINING THE MODEL #
         #########################
-        print '... getting the pretraining functions'
+        print('... getting the pretraining functions')
         pretraining_fns = self.pretraining_functions(train_set_x=train_set_x,
-                                                    batch_size=batch_size,
-                                                    k=k)
+                                                     batch_size=batch_size,
+                                                     k=k)
 
-
-        print '... pre-training the model'
+        print('... pre-training the model')
         start_time = time.clock()
-        ## Pre-train layer-wise
+        # Pre-train layer-wise
         for i in xrange(self.n_layers - 1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
@@ -420,26 +429,28 @@ class AutoencodingDBN(object):
                 for batch_index in xrange(n_train_batches):
                     c.append(pretraining_fns[i](index=batch_index,
                                                 lr=pretrain_lr))
-                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-                print numpy.mean(c)
+                print('Pre-training layer %i, epoch %d, cost %s' %
+                      (i, epoch, numpy.mean(c)))
 
         end_time = time.clock()
         # end-snippet-2
-        print >> sys.stderr, ('The pretraining code for file ' +
-                              os.path.split(__file__)[1] +
-                              ' ran for %.2fm' % ((end_time - start_time) / 60.))
+        print >> sys.stderr, (('The pretraining code for file %s ran for '
+                               '%.2fm') %
+                              ((end_time - start_time) / 60.,
+                               os.path.split(__file__)[1]))
 
-        # If you'd like to try out different parameters for the fine-tuner only,
-        # you can cache the initial model state, so you don't have to pre-train
-        # every time.
-        cPickle.dump(self, open('initial-model.pickle', 'wb'), protocol=cPickle.HIGHEST_PROTOCOL)
+        # If you'd like to try out different parameters for the fine-tuner
+        # only, you can cache the initial model state, so you don't have to
+        # pre-train every time.
+        with open('initial-model.pickle', 'wb') as picklefile:
+            cPickle.dump(self, picklefile, protocol=cPickle.HIGHEST_PROTOCOL)
         ########################
         # FINETUNING THE MODEL #
         ########################
 
         # get the training, validation and testing function for the model
 
-        print '... getting the finetuning functions'
+        print('... getting the finetuning functions')
         use_autoencoder = False
         if use_autoencoder:
             train_fn, test_model = self.build_finetune_functions(
@@ -449,31 +460,32 @@ class AutoencodingDBN(object):
             )
         else:
             raw_labels = numpy.random.randint(2,
-                size=[raw_x.shape[0], self.layer_sizes[-1]])\
+                                              size=[raw_x.shape[0],
+                                                    self.layer_sizes[-1]])\
                 .astype(dtype=numpy.float64)
             labels = theano.shared(raw_labels)
             train_fn, test_model = self.build_generative_finetune_fns(
                 train_set_outputs=train_set_x,
                 train_set_labels=labels,
                 batch_size=batch_size,
-                learning_rate=finetune_lr 
+                learning_rate=finetune_lr
             )
 
-        print '... finetuning the model'
+        print('... finetuning the model')
         # early-stopping parameters
         patience = 4 * n_train_batches  # look as this many examples regardless
-        patience_increase = 2.    # wait this much longer when a new best is
-                                  # found
-        improvement_threshold = 0.995  # a relative improvement of this much is
-                                       # considered significant
+
+        # wait this much longer when a new best is found
+        patience_increase = 2.
+
+        # a relative improvement of this much is considered significant
+        improvement_threshold = 0.995
+
+        # go through this many minibatches before checking the network
+        # on the validation set; in this case we check every epoch
         validation_frequency = min(n_train_batches, patience / 2)
-                                      # go through this many
-                                      # minibatches before checking the network
-                                      # on the validation set; in this case we
-                                      # check every epoch
 
         best_validation_loss = numpy.inf
-        test_score = 0.
         start_time = time.clock()
 
         done_looping = False
@@ -503,7 +515,7 @@ class AutoencodingDBN(object):
                     # if we got the best validation score until now
                     if this_validation_loss < best_validation_loss:
 
-                        #improve patience if loss improvement is good enough
+                        # improve patience if loss improvement is good enough
                         if (
                             this_validation_loss < best_validation_loss *
                             improvement_threshold
@@ -531,8 +543,12 @@ class AutoencodingDBN(object):
                                                   / 60.))
         self.dump_params('./my-model.pickle')
 
-    def sample(self, top_level=None, rootLoc='./', save=True, threshold=0.5,
-            filename='test.midi'):
+    def sample(self,
+               top_level=None,
+               root_loc='./',
+               save=True,
+               threshold=0.5,
+               filename='test.midi'):
         """
         Generates a sample from the trained neural net.  top_level is a 10 x
         [size of top layer] matrix whose rows contain values for the top
@@ -545,28 +561,36 @@ class AutoencodingDBN(object):
                 .astype(dtype=NUMPY_DTYPE)
         output = self.generate(top_level)
         output = output.reshape([10, 88*64])
-        firstIm = output[0, :].reshape([88, 64])
+        first_im = output[0, :].reshape([88, 64])
         # Makes a little picture of the piano roll.
-        outIm = Image.fromarray((firstIm*255).astype('uint8'))
-        outIm.save(path.join(rootLoc, 'test.png'))
+        out_im = Image.fromarray((first_im*255).astype('uint8'))
+        out_im.save(path.join(root_loc, 'test.png'))
         if threshold is not None:
-            firstIm[firstIm > threshold] = 1
-            firstIm[firstIm <= threshold] = 0
+            first_im[first_im > threshold] = 1
+            first_im[first_im <= threshold] = 0
         if save:
-            midiwrite(path.join(rootLoc, filename), firstIm.T, r=(12, 109), dt=64)
-        return firstIm
+            midiwrite(path.join(root_loc, filename),
+                      first_im.T,
+                      r=(12, 109),
+                      dt=64)
+        return first_im
 
-    def label_from_file(self, rootLoc, fileLoc, learn_rate, n_iters, threshold):
+    def label_from_file(self,
+                        root_loc,
+                        file_loc,
+                        learn_rate,
+                        n_iters,
+                        threshold):
         """
-        Given a xml file at fileLoc, harmonizes the melody in the xml file, by
+        Given a xml file at file_loc, harmonizes the melody in the xml file, by
         doing gradient descent on the top hidden layer of the network.  This
         gives us an estimate of the top layer activations that might generate
         the melody. We then run the network forwards to get the entire harmony
         from the top level activations that we estimate.
         """
-        noteReader = myparser.LegatoNoteAdder(64)
-        myparser.read(fileLoc, noteReader.handle)
-        snippet = noteReader.mtx
+        note_reader = myparser.LegatoNoteAdder(64)
+        myparser.read(file_loc, note_reader.handle)
+        snippet = note_reader.mtx
         mask = melody_blocker(snippet)
 
         linear_snippet = snippet.reshape([88*64])
@@ -576,7 +600,6 @@ class AutoencodingDBN(object):
         for i in range(10):
             in_data[i, :] = linear_snippet
             x_mask[i, :] = linear_mask
-
 
         # Do gradient descent to estimate the activations on layer 1.
         new_vals = theano.shared(
@@ -589,17 +612,23 @@ class AutoencodingDBN(object):
         f()
         trainer = self.label(in_data, x_mask, learn_rate)
         for i in range(n_iters):
-            print trainer()
+            print(trainer())
 
         # Then, generate using it.
-        result = dbn.sample(self.isolated_reverse_input, rootLoc=rootLoc, save=False,
-            threshold=threshold)
+        result = dbn.sample(self.isolated_reverse_input,
+                            root_loc=root_loc,
+                            save=False,
+                            threshold=threshold)
         # Add the melody back onto the snippet.
         final = result * (1.0 - mask)
         final = final + snippet
         final[final > 0.5] = 1
-        midiwrite(path.join(rootLoc, 'test.midi'), final.T, r=(12, 109), dt=64)
+        midiwrite(path.join(root_loc, 'test.midi'),
+                  final.T,
+                  r=(12, 109),
+                  dt=64)
         return final
+
 
 def melody_blocker(snippet):
     """
@@ -620,12 +649,13 @@ def melody_blocker(snippet):
             envelope[pitch-2:pitch+3, i] = 1
     return envelope
 
-def load_from_dump(inLoc):
+
+def load_from_dump(in_loc):
     """
     Loads data from dumped state (generated by dumped_params), and creates a
     new DBN.
     """
-    dump = cPickle.load(open(inLoc, 'rb'))
+    dump = cPickle.load(open(in_loc, 'rb'))
     # Get the number of layers.
     max_layer = 0
     for layer, _ in dump:
@@ -639,8 +669,8 @@ def load_from_dump(inLoc):
     # For now, the size of the input is fixed at 88x64, but you can read that
     # out of the dump, as well.
     dbn = AutoencodingDBN(numpy_rng=numpy.random.RandomState(),
-        n_ins=88*64,
-        hidden_layers_sizes=layer_sizes)
+                          n_ins=88*64,
+                          hidden_layers_sizes=layer_sizes)
     for layer in range(max_layer):
         dbn.sigmoid_layers[layer].W.set_value(dump[(layer, 0)])
         dbn.sigmoid_layers[layer].b.set_value(dump[(layer, 1)])
@@ -650,16 +680,19 @@ def load_from_dump(inLoc):
 if __name__ == '__main__':
     if sys.argv[1] == 'train':
         dbn = AutoencodingDBN(numpy_rng=numpy.random.RandomState(),
-            n_ins=88*64,
-            hidden_layers_sizes=[1024, 256, 64])
+                              n_ins=88*64,
+                              hidden_layers_sizes=[1024, 256, 64])
         dbn.train_dbn('./joplin-data.pickle')
         exit()
     dbn = load_from_dump('./joplin-model.pickle')
     import sys
     if sys.argv[1] == 'sample':
         dbn.sample(threshold=0.5)
-    elif sys.argv[1] == 'harmonize': 
-        dbn.label_from_file(path.dirname(sys.argv[0]), './12-days.xml',
-            0.01, 500, 0.4)
+    elif sys.argv[1] == 'harmonize':
+        dbn.label_from_file(path.dirname(sys.argv[0]),
+                            './12-days.xml',
+                            0.01,
+                            500,
+                            0.4)
     else:
-        print "invalid command"
+        print("invalid command")
